@@ -1,0 +1,105 @@
+@inject ConsoleApi Console
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<div class="lms-card my-3">
+    <label>انتخاب فایل <input @ref="_file" type="file" accept="@Accept" @onchange="ReadInfo" disabled="@_busy" /></label>
+    <p class="lms-muted">سقف هر فایل: @LmsPage.Size(Limit) · @Accept</p>
+    @if (_info is not null) { <p class="lms-muted">@_info.Name · @LmsPage.Size(_info.Size)</p> }
+    <div class="lms-row">
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(_busy || _info is null || Disabled)" OnClick="Send">ارسال فایل</MudButton>
+        <progress aria-label="پیشرفت انتقال" max="100" value="0" @ref="_progress"></progress>
+    </div>
+    @if (_tracking.HasValue)
+    {
+        <div class="lms-row"><span class="lms-pill">کد پیگیری <bdi>@_tracking</bdi></span>
+            <MudButton Disabled="@_busy" OnClick="Status">استعلام وضعیت</MudButton></div>
+    }
+    @if (_note is not null) { <p role="status">@_note</p> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid TargetId { get; set; }
+    [Parameter, EditorRequired] public MediaPurpose Purpose { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<FileRow> Uploaded { get; set; }
+    private sealed record Info(string Name, long Size);
+    private sealed record Transfer(int Status);
+    private ElementReference _file, _progress;
+    private Info? _info;
+    private Guid? _tracking;
+    private string? _note;
+    private bool _busy;
+    private Guid? _reported;
+    private long Limit => Purpose == MediaPurpose.RosterExcel ? UploadLimits.RosterBytes : UploadLimits.FileBytes;
+    private string Accept => Purpose switch
+    {
+        MediaPurpose.RosterExcel => ".xlsx",
+        MediaPurpose.StudentAvatar or MediaPurpose.InstructorAvatar => ".jpg,.jpeg,.png",
+        _ => ".mp4,.pdf,.docx,.jpg,.jpeg,.png,.xlsx"
+    };
+    private async Task ReadInfo(ChangeEventArgs _)
+    {
+        _info = await JS.InvokeAsync<Info?>("raLmsTransfer.info", _file);
+        _note = null; _tracking = null;
+    }
+    private async Task Send()
+    {
+        if (_busy || _info is null || Disabled) return;
+        _busy = true; _tracking = null; _note = null;
+        try
+        {
+            var t = await Console.PostAsync<UploadTicket>("api/lms/uploads", new UploadStart(TargetId, Purpose, _info.Name, _info.Size));
+            _tracking = t.TrackingId;
+            if (t.State != UploadState.Pending)
+            {
+                _note = t.Code switch { "reported-size" => "حجم اعلامی معتبر نیست یا بیش از سقف است.", "file-type" => "پسوند مجاز نیست.",
+                    "storage-unconfigured" => "محل فایل تنظیم نشده است.", _ => "دسترسی یا وضعیت این ارسال معتبر نیست." };
+                Snackbar.Add(_note, Severity.Error); return;
+            }
+            using var transferTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(46));
+            var result = await JS.InvokeAsync<Transfer>("raLmsTransfer.send", transferTimeout.Token,
+                _file, _progress, t.TrackingId.ToString("D"));
+            var snapshot = await Console.GetAsync<UploadStatusRow>($"api/lms/uploads/{t.TrackingId:D}");
+            await Show(snapshot, result.Status);
+        }
+        catch (Exception e) when (e is ConsoleApiException or JSException or OperationCanceledException)
+        {
+            _note = e is ConsoleApiException ? e.Message : "پاسخ انتقال تأیید نشد؛ با کد پیگیری استعلام بگیرید.";
+            Snackbar.Add(_note, Severity.Warning);
+        }
+        finally { _busy = false; }
+    }
+    private async Task Show(UploadStatusRow row, int? status)
+    {
+        if (row.State == UploadState.Stored && row.ReceivedBytes is { } bytes)
+        {
+            _note = $"ذخیره شد · {LmsPage.Size(bytes)}";
+            if (_reported != row.TrackingId)
+            {
+                _reported = row.TrackingId;
+                Snackbar.Add("فایل در مخزن خصوصی ذخیره شد.", Severity.Success);
+                await Uploaded.InvokeAsync(new FileRow(row.TrackingId, row.Name, bytes, System.IO.Path.GetExtension(row.Name)));
+                _info = null;
+                await JS.InvokeVoidAsync("raLmsTransfer.reset", _file);
+            }
+            return;
+        }
+        _note = row.State switch
+        {
+            UploadState.Rejected => $"ارسال پذیرفته نشد ({row.Code ?? "نامشخص"}).",
+            UploadState.Interrupted => "قطع انتقال در برنامه ثبت شد.",
+            _ => "اتمام ارسال هنوز تأیید نشده است؛ علت شبکه یا WAF معلوم نیست."
+        };
+        if (status is > 0) _note += $" HTTP {status}";
+        Snackbar.Add(_note, row.State == UploadState.Rejected ? Severity.Error : Severity.Warning);
+    }
+    private async Task Status()
+    {
+        if (_tracking is not { } id) return;
+        _busy = true;
+        try { await Show(await Console.GetAsync<UploadStatusRow>($"api/lms/uploads/{id:D}"), null); }
+        catch (ConsoleApiException e) { Snackbar.Add(e.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,48 @@
+@page "/lms/chat"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>گفتگو</PageTitle>
+<div class="lms">
+    <header class="lms-head"><h1>گفتگو</h1><p>@(_room?.Label ?? "اتاق ورودی فعال") · پیام انسانی، بدون پیوست</p><a href="/lms" style="color:white">میز کار</a></header>
+    @if (Error is not null && !_send) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_room is { } r)
+    {
+        <div class="lms-card lms-row">
+            <LmsChoice Label="مخاطب" Options="@(r.Peers.Select(x => new CatalogRow(x.Id, x.Name)))" Value="@_peer" ValueChanged="ChangePeer" EmptyText="گفتگوی گروهی" Disabled="@Busy" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@Busy" OnClick="Start">پیام تازه</MudButton>
+            <MudButton Disabled="@Busy" OnClick="Refresh">به‌روزرسانی</MudButton>
+            @if (_messages.Length >= 100) { <MudButton Disabled="@Busy" OnClick="Older">پیام‌های قدیمی‌تر</MudButton> }
+        </div>
+        <div class="lms-card lms-chat-list my-4" aria-label="پیام‌ها" aria-live="polite">
+            @foreach (var message in _messages)
+            { <article class="lms-chat-item @(message.Mine ? "mine" : "")" @key="message.Id"><strong>@message.Sender</strong><small class="lms-muted"> · @DateText(message.SentUtc)</small><p class="lms-plain">@message.Text</p></article> }
+            @if (_messages.Length == 0) { <p>پیامی در این گفتگو نیست.</p> }
+        </div>
+    }
+</div>
+<LmsDialog @bind-Visible="_send" Title="@(_peer.HasValue ? "ارسال خصوصی" : "ارسال به اتاق ورودی")" Error="@Error" Busy="@Busy" OnSave="Send" SaveText="ارسال پیام">
+    <label>متن پیام<textarea maxlength="2000" @bind="_text"></textarea></label>
+</LmsDialog>
+
+@code {
+    private ChatRoom? _room;
+    private ChatMessageRow[] _messages = [];
+    private Guid? _peer;
+    private bool _send;
+    private string _text = "";
+    protected override Task OnInitializedAsync() => Refresh();
+    private Task ChangePeer(Guid? next) => Run(async () => { _peer = next; _messages = []; await Load(false); });
+    private Task Older() => Run(() => Load(true));
+    private Task Refresh() => Run(() => Load(false));
+    private async Task Load(bool older)
+    {
+        var path = "chat?" + (_peer is { } p ? $"recipientId={p:D}&" : "") + (older && _messages.FirstOrDefault() is { } m ? "beforeUtc=" + Q(m.SentUtc.ToString("O")) : "");
+        _room = await Get<ChatRoom>(path);
+        _messages = older ? _room.Messages.Concat(_messages).DistinctBy(x => x.Id).ToArray() : _room.Messages;
+    }
+    private void Start() { _text = ""; _send = true; }
+    private Task Send() => Run(async () =>
+    { _ = await Post<Guid>("chat", new ChatPost(_peer, _text)); _send = false; _text = ""; Snack.Add("پیام ثبت شد.", Severity.Success); await Load(false); });
+}

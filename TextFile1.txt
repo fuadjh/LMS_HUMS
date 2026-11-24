@@ -1,0 +1,2 @@
+ReusableAccess + LMS — Start at README.fa.md and docs/DEPLOY.fa.md.
+Provide secrets through the host's secret manager; never print or store secret values in the repository.

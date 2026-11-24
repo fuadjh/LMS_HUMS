@@ -1,0 +1,59 @@
+@page "/lms/admin/grants"
+@attribute [Authorize(Policy = "ConsoleAdmin")]
+@inherits LmsPage
+
+<PageTitle>قلمرو ادمین آموزشی</PageTitle>
+<div class="lms lms-admin">
+    <header class="lms-head"><h1>قلمرو ادمین‌های آموزشی</h1><p>فقط ادمین کل قلمرو ثبت می‌کند. مجوزهای هر نقش جداگانه در بخش نقش‌ها و مجوزها تنظیم می‌شود.</p><a href="/lms" style="color:white">میز کار</a></header>
+    <div class="lms-row"><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => Edit(null)">تخصیص قلمرو</MudButton>
+        <a class="lms-file" href="/console/roles">مجوزهای نقش‌های پایه</a></div>
+    @if (Error is not null && !_open) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    <div class="lms-grid">
+        @foreach (var g in _grants)
+        {
+            <article class="lms-card" @key="g.Id"><h2>@g.DisplayName</h2><p>@g.Scope</p>
+                <p class="lms-muted">@(g.MajorId.HasValue ? "ادمین رشته" : "ادمین دانشکده") · @(g.Active ? "فعال" : "غیرفعال")</p>
+                <MudButton OnClick="() => Edit(g)">تغییر وضعیت</MudButton></article>
+        }
+    </div>
+</div>
+<LmsDialog @bind-Visible="_open" Title="تخصیص یا غیرفعال‌سازی" Lead="برای قلمروِ دانشکده، رشته را خالی بگذارید. این اقدام اجازهٔ مجوزدهی نمی‌دهد." Error="@Error" Busy="@Busy" OnSave="Save">
+    @if (_existing is null)
+    {
+        <div class="lms-row"><label>نام حساب<input @bind="_search" /></label><MudButton OnClick="Find" Disabled="@Busy">یافتن حساب</MudButton></div>
+        <LmsChoice Label="حساب" Options="@_users" @bind-Value="_user" />
+        <LmsChoice Label="دانشکده" Options="@_faculties" Value="@_faculty" ValueChanged="SelectFaculty" />
+        <LmsChoice Label="رشته" Options="@(_majors.Where(x => x.ParentId == _faculty))" @bind-Value="_major" EmptyText="کل دانشکده" />
+    }
+    else { <p>@_existing.DisplayName · @_existing.Scope</p> }
+    <label class="lms-inline"><input type="checkbox" @bind="_active" /> قلمرو فعال باشد.</label>
+</LmsDialog>
+
+@code {
+    private CatalogRow[] _faculties = [], _majors = [], _users = [];
+    private ScopeGrantRow[] _grants = [];
+    private ScopeGrantRow? _existing;
+    private Guid? _faculty, _major, _user;
+    private bool _active, _open;
+    private string _search = "";
+    protected override Task OnInitializedAsync() => Run(async () => { _faculties = await Get<CatalogRow[]>("catalog/faculties"); _majors = await Get<CatalogRow[]>("catalog/majors"); await Load(); });
+    private async Task Load() => _grants = await Get<ScopeGrantRow[]>("grants");
+    private void Edit(ScopeGrantRow? row)
+    {
+        _existing = row; _user = row?.UserId; _faculty = row?.FacultyId; _major = row?.MajorId; _active = row?.Active ?? true;
+        _users = []; _search = ""; _open = true;
+    }
+    private Task SelectFaculty(Guid? id) { _faculty = id; _major = null; return Task.CompletedTask; }
+    private Task Find() => Run(async () =>
+    {
+        var result = await Api.GetAsync<PageResult<UserRow>>($"api/admin/users/manage?q={Q(_search)}&page=1");
+        _users = result.Items.Select(x => new CatalogRow(x.UserId, x.DisplayName)).ToArray();
+    });
+    private Task Save() => Run(async () =>
+    {
+        if (_user is not { } user || _faculty is not { } faculty) throw new ArgumentException("حساب و دانشکده الزامی‌اند.");
+        _ = await Post<Guid>("grants", new ScopeGrantEdit(user, faculty, _major, _active));
+        _open = false; Snack.Add("وضعیت قلمرو ثبت شد.", Severity.Success); await Load();
+    });
+}

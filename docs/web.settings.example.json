@@ -1,0 +1,7 @@
+{
+  "Hosting": { "TrustedProxyIps": [] },
+  "Authentication": { "OpenIddict": { "Authority": "https://localhost:7443/", "ClientSecret": "" } },
+  "Api": { "BaseAddress": "https://localhost:7443/" },
+  "Deployment": { "ApplicationName": "ReusableAccess", "DataProtectionKeysPath": "" },
+  "Ui": { "Title": "سامانهٔ دانشگاه" }
+}

@@ -1,0 +1,30 @@
+<MudDialog Visible="@Visible" VisibleChanged="OnVisible" Options="@Options" Class="lms-dialog" AriaLabel="@Title">
+    <TitleContent><MudText Typo="Typo.h6">@Title</MudText></TitleContent>
+    <DialogContent>
+        @if (Lead is not null) { <p class="lms-muted">@Lead</p> }
+        @ChildContent
+        @if (!string.IsNullOrWhiteSpace(Error)) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@Error</MudAlert> }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Disabled="@Busy" OnClick="() => OnVisible(false)">@(OnSave.HasDelegate ? "انصراف" : "بستن")</MudButton>
+        @if (OnSave.HasDelegate)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@Busy" OnClick="() => OnSave.InvokeAsync()">@SaveText</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public string Title { get; set; } = "سامانهٔ یادگیری";
+    [Parameter] public string? Lead { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string SaveText { get; set; } = "ثبت";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private Task OnVisible(bool v) => Busy ? Task.CompletedTask : VisibleChanged.InvokeAsync(v);
+    private static readonly DialogOptions Options = new()
+    { FullWidth = true, MaxWidth = MaxWidth.Medium, BackdropClick = false, CloseOnEscapeKey = false, CloseButton = false, CloseOnNavigation = true };
+}

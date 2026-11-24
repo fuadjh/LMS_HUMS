@@ -1,0 +1,443 @@
+@page "/lms/offer/{Id:guid}/{View}"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>@(_details?.Offering.Course ?? "ارائهٔ درس")</PageTitle>
+<div class="@Panel">
+    <header class="lms-head">
+        <h1>@(_details?.Offering.Course ?? "ارائهٔ درس")</h1>
+        @if (_details is { } d) { <p>گروه @Fa(d.Offering.Group) · @Fa(d.Offering.Term) · استاد مسئول @d.Offering.Lead</p> }
+        <a href="@($"/lms/offerings/{(View == "preview" ? "teacher" : View)}")" style="color:white">بازگشت به ارائه‌ها</a>
+    </header>
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (Error is not null && !_editor && !_confirm && !_lessonOpen && !_workOpen && !_gradeOpen && !_rosterOpen && !_templates && !_teachers)
+    { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (_details is { } dd)
+    {
+        var o = dd.Offering;
+        <div class="lms-card">
+            <div class="lms-row"><span class="lms-pill">@Audience(o.Audience)</span>
+                @if (View == "student") { <span class="lms-pill lms-ok">@State(o.Status)</span> }
+                @if (dd.ReadOnly) { <span class="lms-pill lms-warn">فقط‌خواندنی</span> }
+                @if (!o.Active) { <span class="lms-pill">بایگانی‌شده</span> }
+            </div>
+            @if (View == "preview") { <p>پیش‌نمایش: زمان‌بندی و وضعیت انتشار رعایت می‌شود و هیچ فعالیت آموزشی ثبت نمی‌شود.</p> }
+            @if (View is "teacher" or "admin") { <p class="lms-muted">نمایش از: <bdi>@DateText(o.VisibleUtc)</bdi> · @(o.PublishedUtc.HasValue ? "منتشرشده" : "پیش‌نویس")</p> }
+            @if (View == "student") { <p class="lms-muted">پایان حذف‌واضافه: <bdi>@DateText(o.DropClosesUtc)</bdi></p> }
+            <div class="lms-row">
+                @if (o.CanEnroll) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="AskJoin">اخذ درس</MudButton> }
+                @if (o.CanWithdraw) { <MudButton Color="Color.Error" Variant="Variant.Outlined" OnClick="AskExit">خروج در حذف‌واضافه</MudButton> }
+                @if (View is "admin" or "teacher") { <MudButton Variant="Variant.Outlined" OnClick="Roster">فهرست ثبت‌نام‌ها</MudButton> }
+                @if (View == "admin") { <MudButton Variant="Variant.Outlined" OnClick="Teachers">هم‌مدرس‌ها</MudButton> }
+                @if (dd.TeacherEditor)
+                {
+                    <MudButton OnClick="EditSchedule">زمان نمایش</MudButton>
+                    <MudButton OnClick="() => EditSession(null)">جلسهٔ جدید</MudButton>
+                    <MudButton OnClick="() => EditChapter(null)">فصل جدید</MudButton>
+                }
+                @if (dd.CanPublish && o.PublishedUtc is null) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="AskPublish">انتشار ارائه</MudButton> }
+                @if (View == "teacher")
+                {
+                    <MudButton Href="@($"/lms/offer/{Id:D}/preview")">پیش‌نمایش دانشجو</MudButton>
+                    @if (dd.Lead && Can(LmsPermissions.Template)) { <MudButton OnClick="Templates">قالب خصوصی</MudButton> }
+                }
+            </div>
+        </div>
+        @if (View == "teacher" && dd.Sessions.Length > 0)
+        {
+            <section class="lms-card my-4"><h2>جلسه‌ها</h2>
+                @foreach (var session in dd.Sessions)
+                { <div class="lms-row"><strong>@session.Title</strong><bdi>@DateText(session.OpensUtc)</bdi>
+                    @if (!session.Active) { <span class="lms-pill">غیرفعال</span> }
+                    @if (dd.TeacherEditor) { <MudButton OnClick="() => EditSession(session)">ویرایش</MudButton> }
+                </div> }
+            </section>
+        }
+        @if (View != "admin")
+        {
+            <div class="lms-grid">
+                @foreach (var c in dd.Chapters)
+                {
+                    <section class="lms-card" @key="c.Id">
+                        <div class="lms-row"><span class="lms-pill">فصل @Fa(c.Position)</span>
+                            @if (View == "teacher") { <span class="lms-pill">@(c.PublishedUtc.HasValue ? "منتشرشده" : c.Active ? "پیش‌نویس" : "بایگانی")</span> }
+                        </div>
+                        <h2>@c.Title</h2>
+                        @foreach (var lesson in c.Lessons)
+                        {
+                            <div class="lms-row"><span>@lesson.Title</span>
+                                @if (lesson.Completed) { <span class="lms-pill lms-ok">تکمیل شده</span> }
+                                @if (!lesson.CanRead) { <small class="lms-muted">بازشدن: <bdi>@DateText(lesson.OpensUtc)</bdi></small> }
+                                else { <MudButton OnClick="() => ShowLesson(c, lesson)">بازکردن درسک</MudButton> }
+                                @if (dd.TeacherEditor && c.PublishedUtc is null) { <MudButton OnClick="() => EditLesson(c, lesson)">ویرایش</MudButton> }
+                            </div>
+                        }
+                        @foreach (var assignment in c.Assessments)
+                        {
+                            <div class="lms-row"><span>@(assignment.Quiz is null ? "تکلیف" : "آزمون چهارگزینه‌ای"): @assignment.Title</span>
+                                <small class="lms-muted">موعد <bdi>@DateText(assignment.DueUtc)</bdi></small>
+                                <MudButton OnClick="() => ShowWork(assignment)">@(View == "teacher" ? "صورت تکلیف و تصحیح" : "مشاهدهٔ تکلیف")</MudButton>
+                                @if (dd.TeacherEditor && c.PublishedUtc is null) { <MudButton OnClick="() => EditAssessment(c, assignment)">ویرایش</MudButton> }
+                            </div>
+                        }
+                        @if (c.PublishedUtc is null && View == "teacher")
+                        {
+                            <div class="lms-row">
+                                @if (dd.TeacherEditor)
+                                {
+                                    <MudButton OnClick="() => EditChapter(c)">ویرایش فصل</MudButton>
+                                    <MudButton OnClick="() => EditLesson(c, null)">افزودن درسک</MudButton>
+                                    <MudButton OnClick="() => EditAssessment(c, null)">افزودن تکلیف</MudButton>
+                                }
+                                @if (dd.CanPublish && c.Active) { <MudButton Color="Color.Primary" OnClick="() => AskChapter(c)">انتشار فصل</MudButton> }
+                            </div>
+                        }
+                    </section>
+                }
+            </div>
+            @if (dd.Chapters.Length == 0) { <p class="lms-muted">در این نما هنوز فصلی قابل نمایش نیست.</p> }
+        }
+    }
+</div>
+
+<LmsDialog @bind-Visible="_confirm" Title="@_confirmTitle" Lead="@_confirmImpact" Busy="@Busy" Error="@Error" OnSave="Confirm" SaveText="تأیید عملیات">
+    @if (_reasonNeeded) { <label>دلیل حذف مدیریتی<textarea @bind="_reason" maxlength="500"></textarea></label> }
+</LmsDialog>
+<LmsDialog @bind-Visible="_editor" Title="@_editTitle" Busy="@Busy" Error="@Error" OnSave="SaveEdit" Lead="زمان‌ها جلالی و به وقت تهران‌اند. فصل منتشرشده برای حفظ سوابق فقط خواندنی است.">
+    <div class="lms-grid">
+        @if (_kind == "schedule") { <label>زمان دیده‌شدن ارائه<input class="lms-date" @bind="_time" placeholder="۱۴۰۵/۰۹/۰۱ ۰۸:۰۰" /></label> }
+        else
+        {
+            <label>عنوان<input @bind="_title" maxlength="180" /></label>
+            @if (_kind is "chapter" or "lesson") { <label>ترتیب<input type="number" min="1" max="1000" @bind="_position" /></label> }
+            @if (_kind == "session") { <label>زمان بازشدن جلسه<input class="lms-date" @bind="_time" placeholder="۱۴۰۵/۰۹/۰۱ ۰۸:۰۰" /></label> }
+            @if (_kind == "lesson") { <LmsChoice Label="جلسهٔ بازشدن درسک" Options="@SessionChoices" @bind-Value="_session" EmptyText="زمان‌بندی نشده" /> }
+            @if (_kind == "assessment")
+            {
+                <label>نوع ارزیابی<select @bind="_isQuiz"><option value="false">تکلیف متنی یا فایل</option><option value="true">آزمون چهارگزینه‌ای</option></select></label>
+                <label>موعد عادی<input class="lms-date" @bind="_due" placeholder="۱۴۰۵/۰۹/۱۵ ۲۰:۰۰" /></label>
+                <label>مهلت نهایی (اختیاری)<input class="lms-date" @bind="_cutoff" placeholder="۱۴۰۵/۰۹/۱۷ ۲۰:۰۰" /></label>
+                <label>حداکثر تلاش<input type="number" min="1" max="20" @bind="_attempts" /></label>
+                <label>سقف نمره<input type="number" min="0.01" max="1000" step="0.01" @bind="_maxScore" /></label>
+            }
+        }
+    </div>
+    @if (_kind is "lesson" or "assessment") { <label>@(_kind == "lesson" ? "متن درسک" : "صورت تکلیف")<textarea @bind="_body"></textarea></label> }
+    @if (_kind == "assessment")
+    {
+        <label>معیار تصحیح یا راهنما<textarea @bind="_rubric"></textarea></label>
+        @if (_isQuiz == "true")
+        {
+            @foreach (var q in _quizEditor)
+            {
+                <article class="lms-card my-2" @key="q">
+                    <label>صورت سؤال<textarea @bind="q.Prompt" maxlength="1000"></textarea></label>
+                    @for (var j = 0; j < 4; j++)
+                    { var index = j; <label>گزینهٔ @Fa(j + 1)<input @bind="q.Choices[index]" maxlength="500" /></label> }
+                    <label>گزینهٔ درست<select @bind="q.Correct"><option value="0">۱</option><option value="1">۲</option><option value="2">۳</option><option value="3">۴</option></select></label>
+                    <MudButton OnClick="() => DropQuestion(q)">برداشتن سؤال از پیش‌نویس</MudButton>
+                </article>
+            }
+            <MudButton OnClick="AddQuestion" Disabled="@(_quizEditor.Count >= 30)">سؤال تازه</MudButton>
+        }
+    }
+    @if (_kind != "schedule") { <label class="lms-inline"><input type="checkbox" @bind="_sectionActive" /> فعال (بدون حذف رکورد)</label> }
+</LmsDialog>
+<LmsDialog @bind-Visible="_lessonOpen" Title="@(_lesson?.Title ?? "درسک")" Error="@Error" Busy="@Busy">
+    @if (_lesson is { } l)
+    {
+        <p class="lms-plain">@l.Body</p>
+        @foreach (var f in l.Files)
+        {
+            @if (f.Extension == ".mp4") { <video controls preload="metadata" src="@FileUrl(f.Id)" style="display:block;width:100%;max-height:50vh"></video> }
+            <p><a class="lms-file" href="@FileUrl(f.Id)" target="_blank" rel="noopener">@f.Name · @Size(f.Bytes)</a></p>
+        }
+        @if (View == "teacher" && _details?.TeacherEditor == true && _chapter?.PublishedUtc is null && Can(LmsPermissions.LessonUpload))
+        { <LmsUpload @key="l.Id" TargetId="@l.Id" Purpose="MediaPurpose.LessonMaterial" Uploaded="LessonFileReady" /> }
+        @if (View == "student" && _details?.ReadOnly == false && !l.Completed && Can(LmsPermissions.Progress))
+        { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Done" Disabled="@Busy">علامت‌گذاری تکمیل درسک</MudButton> }
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_rosterOpen" Title="فهرست ثبت‌نام‌ها" Busy="@Busy" Error="@Error" Lead="خروج از درس صرفاً وضعیت ثبت‌نام را تغییر می‌دهد.">
+    <label>جستجو در فهرست<input @bind="_rosterSearch" @bind:event="oninput" /></label>
+    @foreach (var r in _roster.Where(x => $"{x.Name} {x.Number}".Contains(_rosterSearch, StringComparison.OrdinalIgnoreCase)))
+    {
+        <article class="lms-card my-2">
+            <h3>@r.Name</h3><p>@r.StudyLabel · @r.Number · @State(r.Status)</p>
+            @if (View == "admin") { <MudButton OnClick="() => History(r)">تاریخچهٔ وضعیت</MudButton> }
+            @if (r.CanRemove) { <MudButton Color="Color.Error" OnClick="() => AskRemove(r)">حذف مدیریتی</MudButton> }
+            @if (View == "teacher" && _details?.Lead == true && (Can(LmsPermissions.Grade) || Can(LmsPermissions.Release)))
+            { <MudButton OnClick="() => OpenFinal(r)">نمرهٔ پایانی غیررسمی</MudButton> }
+        </article>
+    }
+    @if (_roster.Length == 0) { <p>ثبت‌نامی یافت نشد.</p> }
+</LmsDialog>
+<LmsDialog @bind-Visible="_history" Title="تاریخچهٔ ثبت‌نام" Error="@Error" Busy="@Busy">
+    @foreach (var item in _enrollmentHistory) { <p>@State(item.Status) · @DateText(item.OccurredUtc)</p><p class="lms-plain">@item.Reason</p> }
+</LmsDialog>
+<LmsDialog @bind-Visible="_teachers" Title="تدریس گروهی" Error="@Error" Busy="@Busy" Lead="نمای دانشجو محتوای استاد مسئول را نشان می‌دهد. اختیار هم‌مدرس باید صریح ثبت شود.">
+    @foreach (var c in _details?.CoTeachers ?? [])
+    { <div class="lms-row"><strong>@c.DisplayName</strong><span>@(c.Active ? "فعال" : "غیرفعال")</span><MudButton OnClick="() => SelectCo(c)">ویرایش اختیار</MudButton></div> }
+    @if (_details?.ReadOnly == false)
+    {
+        <LmsChoice Label="هم‌مدرس" Options="@_teacherOptions" @bind-Value="_coId" />
+        <label class="lms-inline"><input type="checkbox" @bind="_coGrade" /> تصحیح تکلیف با مجوز نقش</label>
+        <label class="lms-inline"><input type="checkbox" @bind="_coPublish" /> انتشار محتوای استاد مسئول با مجوز نقش</label>
+        <label class="lms-inline"><input type="checkbox" @bind="_coActive" /> فعال باشد</label>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveCo" Disabled="@Busy">ثبت تخصیص</MudButton>
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_templates" Title="قالب خصوصی و نسخه‌ها" Error="@Error" Busy="@Busy" Lead="فقط طرح، متن، فایل درسک و صورت تکلیف ذخیره می‌شود؛ بدون تقویم، ورودی، پاسخ یا نمرهٔ دانشجو.">
+    <LmsChoice Label="قالب موجود یا قالب جدید" Options="@TemplateOptions" @bind-Value="_template" EmptyText="قالب جدید" />
+    <label>نام قالب تازه<input @bind="_templateName" disabled="@_template.HasValue" /></label>
+    <MudButton OnClick="SaveTemplate" Disabled="@Busy">ذخیرهٔ نسخهٔ تازه</MudButton>
+    @if (_details is { } ts && !ts.ReadOnly && ts.Chapters.Length == 0 && ts.Offering.PublishedUtc is null)
+    {
+        <LmsChoice Label="نسخه برای این پیش‌نویس خالی" Options="@VersionOptions" @bind-Value="_version" />
+        <MudButton Color="Color.Primary" Variant="Variant.Outlined" OnClick="AskApply" Disabled="@Busy">استفاده از نسخه</MudButton>
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_workOpen" Title="@(_assessment?.Title ?? "تکلیف")" Error="@Error" Busy="@Busy">
+    @if (_assessment is { } a)
+    {
+        <p class="lms-plain">@a.Prompt</p>
+        @if (!string.IsNullOrWhiteSpace(a.Rubric)) { <details><summary>معیار تصحیح</summary><p class="lms-plain">@a.Rubric</p></details> }
+        <p class="lms-muted">موعد عادی <bdi>@DateText(a.DueUtc)</bdi> · مهلت نهایی <bdi>@DateText(a.CutoffUtc)</bdi> · @Fa(a.MaxAttempts) تلاش · از @Fa(a.MaxScore)</p>
+        @if (a.Quiz is { } list && (View == "teacher" || View == "preview"))
+        { <details><summary>سؤال‌های آزمون</summary>@foreach (var q in list) { <p>@q.Prompt</p><ul>@foreach (var answer in q.Choices) { <li>@answer</li> }</ul> }</details> }
+        @foreach (var attempt in _work)
+        {
+            <article class="lms-card my-2" @key="attempt.Id">
+                <h3>@attempt.Student · تلاش @Fa(attempt.Attempt)</h3><p class="lms-muted">@DateText(attempt.SentUtc) @(attempt.Late ? "· دیرهنگام" : "")</p>
+                <p class="lms-plain">@attempt.Text</p>
+                @foreach (var f in attempt.Files) { <p><a class="lms-file" href="@FileUrl(f.Id)">@f.Name · @Size(f.Bytes)</a></p> }
+                @if (attempt.Grades.FirstOrDefault() is { } g)
+                { <p class="lms-pill @(g.Published ? "lms-ok" : "")">@(g.Published ? "منتشرشده" : "پیش‌نویس") · @Fa(g.Score) از @Fa(a.MaxScore)</p><p class="lms-plain">@g.Feedback</p> }
+                @if (View == "teacher" && (_details?.CanGrade == true || _details?.CanRelease == true)) { <MudButton OnClick="() => OpenGrade(attempt)">تصحیح و تاریخچه</MudButton> }
+            </article>
+        }
+        @if (MaySubmit)
+        {
+            @if (a.Quiz is { } questions)
+            {
+                @for (var i = 0; i < questions.Length; i++)
+                {
+                    var index = i;
+                    <label>@Fa(i + 1). @questions[i].Prompt<select @bind="_answers[index]">
+                        <option value="-1">یک گزینه انتخاب کنید</option>
+                        @for (var j = 0; j < questions[i].Choices.Length; j++)
+                        { <option value="@j">@questions[i].Choices[j]</option> }
+                    </select></label>
+                }
+            }
+            else
+            {
+                <label>متن تلاش تازه<textarea @bind="_response" maxlength="32000"></textarea></label>
+                @if (Can(LmsPermissions.SubmissionUpload) && _pendingFiles.Count < 8)
+                { <LmsUpload @key="a.Id" TargetId="@a.Id" Purpose="MediaPurpose.Submission" Uploaded="SubmissionFileReady" /> }
+                @foreach (var f in _pendingFiles)
+                { <p>@f.Name · @Size(f.Bytes) <MudButton OnClick="() => RemovePending(f)">جداکردن از این تلاش</MudButton></p> }
+            }
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="AskSubmit" Disabled="@Busy">ثبت تلاش تازه</MudButton>
+        }
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_gradeOpen" Title="@(_final ? "نمرهٔ پایانی غیررسمی" : "تصحیح تکلیف")" Busy="@Busy" Error="@Error" Lead="پیش‌نویس برای دانشجو مخفی است. انتشار، نتیجه را فقط برای همان دانشجو قابل‌مشاهده می‌کند.">
+    <p>@_gradedName</p>
+    @if (_details?.CanGrade == true || _details?.CanRelease == true)
+    {
+        <label>نمره از @Fa(_gradeMax)<input type="number" step="0.01" min="0" max="@_gradeMax" @bind="_score" /></label>
+        <label>بازخورد خصوصی<textarea @bind="_feedback" maxlength="8000"></textarea></label>
+        <div class="lms-row">
+            @if (_details.CanGrade) { <MudButton Variant="Variant.Outlined" OnClick="DraftGrade" Disabled="@Busy">ذخیرهٔ پیش‌نویس</MudButton> }
+            @if (_details.CanRelease) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="AskRelease" Disabled="@Busy">تأیید انتشار نتیجه</MudButton> }
+        </div>
+    }
+    <details><summary>سابقهٔ نسخه‌ها (@Fa(_gradeHistory.Length))</summary>
+        @foreach (var g in _gradeHistory)
+        { <p>نسخه @Fa(g.Revision) · @Fa(g.Score) · @DateText(g.CreatedUtc) · @(g.Published ? "منتشرشده" : "پیش‌نویس")</p><p class="lms-plain">@g.Feedback</p> }
+    </details>
+</LmsDialog>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [Parameter] public string View { get; set; } = "student";
+    private string Panel => View == "admin" ? "lms lms-admin" : View == "teacher" ? "lms lms-teacher" : "lms";
+    private string Root => $"offerings/{Id:D}";
+    private LmsHome? _home;
+    private OfferingDetails? _details;
+    private ChapterRow? _chapter;
+    private LessonRow? _lesson;
+    private AssessmentRow? _assessment;
+    private RosterRow[] _roster = [];
+    private EnrollmentHistoryRow[] _enrollmentHistory = [];
+    private bool _history;
+    private AttemptRow[] _work = [];
+    private TemplateRow[] _versions = [];
+    private CatalogRow[] _teacherOptions = [];
+    private CatalogRow[] SessionChoices => (_details?.Sessions ?? []).Where(s => s.Active).Select(s => new CatalogRow(s.Id, s.Title + " · " + DateText(s.OpensUtc))).ToArray();
+    private CatalogRow[] TemplateOptions => _versions.GroupBy(x => x.Id).Select(x => new CatalogRow(x.Key, x.First().Title)).ToArray();
+    private CatalogRow[] VersionOptions => _versions.Select(x => new CatalogRow(x.VersionId, $"{x.Title} · نسخه {Fa(x.Version)}")).ToArray();
+    private bool _confirm, _editor, _lessonOpen, _rosterOpen, _workOpen, _gradeOpen, _templates, _teachers;
+    private bool _reasonNeeded, _sectionActive, _coGrade, _coPublish, _coActive, _final;
+    private Guid? _editId, _parent, _session, _template, _version, _coId;
+    private Guid _gradedId;
+    private int _position, _attempts;
+    private decimal _maxScore, _score, _gradeMax;
+    private string _confirmTitle = "", _confirmImpact = "", _reason = "", _editTitle = "", _kind = "", _title = "", _body = "", _rubric = "", _response = "", _feedback = "", _gradedName = "", _rosterSearch = "", _templateName = "";
+    private string? _time, _due, _cutoff;
+    private GradeRow[] _gradeHistory = [];
+    private sealed class QuizEdit
+    { public string Prompt { get; set; } = ""; public string[] Choices { get; } = ["", "", "", ""]; public int Correct { get; set; } }
+    private readonly List<QuizEdit> _quizEditor = [];
+    private string _isQuiz = "false";
+    private int[] _answers = [];
+    private void AddQuestion() => _quizEditor.Add(new());
+    private void DropQuestion(QuizEdit q) => _quizEditor.Remove(q);
+    private QuizQuestionRow[]? QuizInput()
+    {
+        if (_kind != "assessment" || _isQuiz != "true") return null;
+        if (_quizEditor.Count == 0) throw new ArgumentException("برای آزمون دست‌کم یک سؤال ثبت کنید.");
+        return _quizEditor.Select(q => new QuizQuestionRow(q.Prompt, q.Choices, q.Correct)).ToArray();
+    }
+    private Func<Task>? _saveConfirmed;
+    private readonly List<FileRow> _pendingFiles = [];
+    private bool Can(string permission) => _home?.Permissions.Contains(permission) == true;
+    private bool MaySubmit => View == "student" && Can(LmsPermissions.Submit) && _details?.ReadOnly == false &&
+        _assessment is { CutoffUtc: { } cutoff } a && DateTimeOffset.UtcNow < cutoff && _work.Length < a.MaxAttempts;
+    protected override Task OnParametersSetAsync() => Run(async () =>
+    {
+        _details = null; _confirm = _editor = _lessonOpen = _rosterOpen = _workOpen = _gradeOpen = _templates = _teachers = false;
+        if (View is not ("student" or "admin" or "teacher" or "preview")) throw new ArgumentException("نمای نامعتبر است.");
+        _home = await Get<LmsHome>("me"); await Load();
+    });
+    private async Task Load() => _details = await Get<OfferingDetails>($"{Root}?view={View}");
+    private static string FileUrl(Guid id) => $"/bff/lms/files/{id:D}";
+    private void Ask(string title, string impact, Func<Task> action, bool reason = false)
+    { _confirmTitle = title; _confirmImpact = impact; _reasonNeeded = reason; _reason = ""; _saveConfirmed = action; _confirm = true; }
+    private Task Confirm() => Run(async () => { if (_saveConfirmed is not null) await _saveConfirmed(); _confirm = false; });
+    private void AskJoin() => Ask("اخذ درس", "درخواست دوباره با مقررات نیم‌سال و ورودی بررسی می‌شود.", async () =>
+    { var c = await Post<EnrollmentChange>($"{Root}/join"); Snack.Add(c.Changed ? "درس اخذ شد." : "درس از پیش اخذ شده بود.", Severity.Success); await Load(); });
+    private void AskExit()
+    {
+        if (_details?.Offering.EnrollmentId is not { } e) return;
+        Ask("خروج از درس", "دسترسی جاری متوقف می‌شود. ثبت‌نام، تحویل، نمره و پیشرفت پاک نمی‌شوند. ثبت مجدد خودکار نیست.", async () =>
+        { var c = await Post<EnrollmentChange>($"enrollments/{e:D}/withdraw"); Snack.Add(c.Changed ? "خروج دانشجویی ثبت شد." : "خروج قبلاً ثبت شده بود.", Severity.Success); await Load(); });
+    }
+    private void AskRemove(RosterRow r)
+    {
+        _rosterOpen = false;
+        Ask($"حذف مدیریتی: {r.Name}", "ثبت‌نام به «حذف توسط مدیر» تغییر می‌کند. سابقه، نمره و تکلیف باقی می‌مانند.", async () =>
+        { var c = await Post<EnrollmentChange>($"enrollments/{r.EnrollmentId:D}/remove", new RemoveEnrollmentInput(_reason)); Snack.Add(c.Changed ? "حذف مدیریتی ثبت شد." : "حذف قبلاً ثبت شده بود.", Severity.Success); await LoadRoster(); _rosterOpen = true; }, true);
+    }
+    private void AskPublish() => Ask("انتشار ارائه", "در تاریخ نمایش، اطلاعات ارائه برای واجدان شرایط دیده می‌شود. زمان جلسه‌ها مستقل است.", async () =>
+    { _ = await Post<bool>($"{Root}/publish"); Snack.Add("ارائه منتشر شد.", Severity.Success); await Load(); });
+    private void AskChapter(ChapterRow c) => Ask("انتشار فصل", "فصل به ارائه افزوده می‌شود؛ ترتیب و محتوای آن پس از انتشار ثابت می‌مانند.", async () =>
+    { _ = await Post<bool>($"{Root}/chapters/{c.Id:D}/publish"); Snack.Add("فصل منتشر شد.", Severity.Success); await Load(); });
+    private void Edit(string kind, string title, Guid? id, Guid? parent, string? contentTitle, bool active = true, int order = 1)
+    {
+        _kind = kind; _editTitle = title; _editId = id; _parent = parent; _title = contentTitle ?? ""; _sectionActive = active; _position = order;
+        _time = _due = _cutoff = null; _body = _rubric = ""; _attempts = 1; _maxScore = 20; _session = null; _editor = true;
+    }
+    private void EditSchedule() { Edit("schedule", "زمان نمایش ارائه", null, null, null); _time = DateInput(_details?.Offering.VisibleUtc); }
+    private void EditSession(SessionRow? s) { Edit("session", "زمان‌بندی جلسه", s?.Id, null, s?.Title, s?.Active ?? true); _time = DateInput(s?.OpensUtc); }
+    private void EditChapter(ChapterRow? c) => Edit("chapter", "فصل ارائه", c?.Id, null, c?.Title, c?.Active ?? true, c?.Position ?? ((_details?.Chapters.LastOrDefault()?.Position ?? 0) + 1));
+    private void EditLesson(ChapterRow c, LessonRow? l) { Edit("lesson", "درسک و جلسه", l?.Id, c.Id, l?.Title, l?.Active ?? true, l?.Position ?? ((c.Lessons.LastOrDefault()?.Position ?? 0) + 1)); _body = l?.Body ?? ""; _session = l?.SessionId; }
+    private void EditAssessment(ChapterRow c, AssessmentRow? a)
+    {
+        Edit("assessment", "ارزیابی و مهلت‌ها", a?.Id, c.Id, a?.Title, a?.Active ?? true);
+        _body = a?.Prompt ?? ""; _rubric = a?.Rubric ?? ""; _due = DateInput(a?.DueUtc); _cutoff = DateInput(a?.CutoffUtc); _attempts = a?.MaxAttempts ?? 1; _maxScore = a?.MaxScore ?? 20;
+        _isQuiz = a?.Quiz is null ? "false" : "true"; _quizEditor.Clear();
+        foreach (var q in a?.Quiz ?? [])
+        { var edit = new QuizEdit { Prompt = q.Prompt, Correct = q.CorrectIndex ?? 0 }; Array.Copy(q.Choices, edit.Choices, 4); _quizEditor.Add(edit); }
+    }
+    private Task SaveEdit() => Run(async () =>
+    {
+        if (_kind == "schedule") _ = await Post<bool>($"{Root}/schedule", new ScheduleEdit(InputDate(_time)));
+        else _ = await Post<Guid>($"{Root}/content/{_kind}", new SectionEdit(_editId, _parent, _title, _position, _session, _body, _rubric,
+            DateOrNull(_time), DateOrNull(_due), DateOrNull(_cutoff), _attempts, _maxScore, _sectionActive, QuizInput()));
+        _editor = false; Snack.Add("اطلاعات ارائه ثبت شد.", Severity.Success); await Load();
+    });
+    private void ShowLesson(ChapterRow c, LessonRow l) { _chapter = c; _lesson = l; _lessonOpen = true; }
+    private async Task RefreshLesson()
+    {
+        await Load(); _chapter = _details?.Chapters.FirstOrDefault(c => c.Id == _chapter?.Id);
+        _lesson = _chapter?.Lessons.FirstOrDefault(l => l.Id == _lesson?.Id);
+    }
+    private Task LessonFileReady(FileRow _) => Run(RefreshLesson);
+    private Task Done() => Run(async () =>
+    { if (_lesson is not { } l) return; _ = await Post<bool>($"lessons/{l.Id:D}/done"); Snack.Add("پیشرفت ثبت شد.", Severity.Success); await RefreshLesson(); });
+    private Task Roster() => Run(async () => { await LoadRoster(); _rosterSearch = ""; _rosterOpen = true; });
+    private Task History(RosterRow row) => Run(async () =>
+    { _enrollmentHistory = await Get<EnrollmentHistoryRow[]>($"enrollments/{row.EnrollmentId:D}/history?view=admin"); _rosterOpen = false; _history = true; });
+    private async Task LoadRoster() => _roster = await Get<RosterRow[]>($"{Root}/roster?view={View}");
+    private Task Teachers() => Run(async () =>
+    {
+        _teacherOptions = _details?.ReadOnly == false ? (await Get<PeopleRow[]>("people/teacher")).Where(t => t.UserId != _details?.Offering.LeadId && t.ProfileActive && t.AccountActive)
+            .Select(t => new CatalogRow(t.UserId, t.DisplayName)).ToArray() : [];
+        _coId = null; _coActive = true; _coGrade = _coPublish = false; _teachers = true;
+    });
+    private void SelectCo(CoTeacherRow c) { _coId = c.InstructorId; _coActive = c.Active; _coGrade = c.CanGrade; _coPublish = c.CanPublish; }
+    private Task SaveCo() => Run(async () =>
+    {
+        if (_coId is not { } id) throw new ArgumentException("هم‌مدرس را انتخاب کنید.");
+        _ = await Post<Guid>($"{Root}/co-teachers", new CoTeacherEdit(id, _coGrade, _coPublish, _coActive));
+        Snack.Add("تخصیص ثبت شد.", Severity.Success); await Load();
+    });
+    private Task Templates() => Run(async () => { await LoadTemplates(); _template = _version = null; _templateName = ""; _templates = true; });
+    private async Task LoadTemplates() => _versions = (await Get<TemplateRow[]>("templates")).Where(t => t.CourseId == _details?.Offering.CourseId).ToArray();
+    private Task SaveTemplate() => Run(async () =>
+    {
+        var title = _template is { } id ? TemplateOptions.Single(x => x.Id == id).Title : _templateName;
+        _ = await Post<Guid>($"{Root}/templates/save", new TemplateSave(_template, title)); Snack.Add("نسخهٔ خصوصی ذخیره شد.", Severity.Success); await LoadTemplates();
+    });
+    private void AskApply()
+    {
+        if (_version is not { } v) { Snack.Add("نسخه را انتخاب کنید.", Severity.Warning); return; }
+        _templates = false;
+        Ask("استفاده از قالب", "فقط محتوای پیش‌نویس کپی می‌شود؛ جلسه‌ها و موعدها را دوباره تنظیم کنید.", async () =>
+        { _ = await Post<bool>($"{Root}/templates/apply", new TemplateApply(v)); Snack.Add("نسخه در ارائهٔ خالی استفاده شد.", Severity.Success); await Load(); });
+    }
+    private Task ShowWork(AssessmentRow a) => Run(async () =>
+    {
+        _assessment = a; _response = ""; _pendingFiles.Clear(); _work = []; _answers = Enumerable.Repeat(-1, a.Quiz?.Length ?? 0).ToArray(); await LoadWork(); _workOpen = true;
+    });
+    private async Task LoadWork()
+    {
+        if (_assessment is not { } a || View == "preview" || View == "teacher" && !Can(LmsPermissions.Grade) && !Can(LmsPermissions.Release)) return;
+        _work = await Get<AttemptRow[]>($"assessments/{a.Id:D}/work?view={View}");
+    }
+    private Task SubmissionFileReady(FileRow f) { if (_pendingFiles.Count < 8 && !_pendingFiles.Any(x => x.Id == f.Id)) _pendingFiles.Add(f); return Task.CompletedTask; }
+    private void RemovePending(FileRow f) => _pendingFiles.Remove(f);
+    private void AskSubmit()
+    {
+        if (_assessment is not { } a) return;
+        _workOpen = false;
+        Ask("ثبت تلاش تازه", "این ارسال در سامانه ثابت می‌ماند؛ ارسال مجدد، در صورت مهلت و ظرفیت، تلاش تازه است.", async () =>
+        {
+            _ = await Post<Guid>($"assessments/{a.Id:D}/work", new AttemptInput(a.Quiz is null ? _response : null, _pendingFiles.Select(x => x.Id).ToArray(), a.Quiz is null ? null : _answers));
+            _pendingFiles.Clear(); _response = ""; Array.Fill(_answers, -1); Snack.Add("تلاش تازه ثبت شد.", Severity.Success); await LoadWork(); _workOpen = true;
+        });
+    }
+    private void FillGrade(bool final, Guid id, string name, decimal max, GradeRow[] grades)
+    { _final = final; _gradedId = id; _gradedName = name; _gradeMax = max; _gradeHistory = grades; _score = grades.FirstOrDefault()?.Score ?? 0; _feedback = grades.FirstOrDefault()?.Feedback ?? ""; _gradeOpen = true; }
+    private void OpenGrade(AttemptRow a)
+    { _workOpen = false; FillGrade(false, a.Id, a.Student ?? "تصحیح", _assessment?.MaxScore ?? 20, a.Grades); }
+    private Task OpenFinal(RosterRow r) => Run(async () =>
+    { var grades = await Get<GradeRow[]>($"enrollments/{r.EnrollmentId:D}/grade"); _rosterOpen = false; FillGrade(true, r.EnrollmentId, r.Name, 20, grades); });
+    private Task DraftGrade() => Run(() => SaveGrade(false));
+    private async Task SaveGrade(bool publish)
+    {
+        var endpoint = _final ? $"enrollments/{_gradedId:D}/grade" : $"submissions/{_gradedId:D}/grade";
+        _ = await Post<Guid>(endpoint, new GradeEdit(_score, _feedback, publish));
+        Snack.Add(publish ? "نمره و بازخورد منتشر شد." : "پیش‌نویس تصحیح ذخیره شد.", Severity.Success);
+        if (_final) _gradeHistory = await Get<GradeRow[]>(endpoint);
+        else { await LoadWork(); _gradeHistory = _work.FirstOrDefault(x => x.Id == _gradedId)?.Grades ?? []; }
+        _gradeOpen = true;
+    }
+    private void AskRelease()
+    {
+        _gradeOpen = false;
+        Ask("انتشار نتیجه", $"نمرهٔ {Fa(_score)} برای همان دانشجو قابل‌مشاهده می‌شود؛ سابقهٔ نسخه‌ها باقی می‌ماند.", () => SaveGrade(true));
+    }
+}

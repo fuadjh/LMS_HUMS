@@ -1,0 +1,5 @@
+﻿@page "/console/roles"
+@attribute [Authorize(Policy = "ConsoleAdmin")]
+
+<PageTitle>نقش‌ها و مجوزها</PageTitle>
+<CatalogPage Kind="CatalogKind.Roles" />

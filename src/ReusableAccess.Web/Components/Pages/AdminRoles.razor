@@ -1,0 +1,5 @@
+﻿@page "/admin/roles"
+@attribute [Authorize(Policy = "ConsoleAdmin")]
+
+<PageTitle>مدیریت نقش‌ها</PageTitle>
+<CatalogPage Kind="CatalogKind.Roles" />

@@ -1,0 +1,96 @@
+﻿@inherits LayoutComponentBase
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
+
+<MudRTLProvider RightToLeft="true">
+    <MudThemeProvider Theme="@_theme"
+                      IsDarkMode="@_dark"
+                      ObserveSystemDarkModeChange="false" />
+    <MudPopoverProvider />
+    <MudDialogProvider />
+    <MudSnackbarProvider />
+
+    <MudLayout Class="ra-layout">
+        <MudAppBar Elevation="0" Class="ra-appbar">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                           aria-label="باز و بسته‌کردن منو"
+                           OnClick="() => _drawer = !_drawer" />
+            <MudText Typo="Typo.h6" Class="ra-app-title">
+                @(Configuration["Ui:Title"] ?? "مدیریت دسترسی")
+            </MudText>
+
+            <MudSpacer />
+
+            <MudIconButton Icon="@(_dark ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           aria-label="تغییر حالت روشن و تیره"
+                           OnClick="ToggleTheme" />
+
+            @* در RTL، آخرین عضو پس از Spacer در سمت چپ قرار می‌گیرد. *@
+            <AccountMenu />
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="_drawer"
+                   Anchor="Anchor.Right"
+                   Variant="DrawerVariant.Responsive"
+                   ClipMode="DrawerClipMode.Always"
+                   Elevation="0"
+                   Class="ra-drawer">
+            <MudDrawerHeader>
+                <MudText Typo="Typo.h6">
+                    @(Configuration["Deployment:ApplicationName"] ?? "ReusableAccess")
+                </MudText>
+            </MudDrawerHeader>
+            <NavMenu />
+        </MudDrawer>
+
+        <MudMainContent>
+            <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-5">
+                <UiFlashNotice />
+                @* پل موقت صفحات قدیمی؛ صفحات جدید خودشان ra-modern دارند. *@
+                <div class="ra-legacy">
+                    @Body
+                </div>
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+</MudRTLProvider>
+
+<div id="blazor-error-ui" data-nosnippet>
+    ارتباط قطع شد یا خطایی رخ داد.
+    <a href="." class="reload">بارگذاری دوباره</a>
+    <span class="dismiss">×</span>
+</div>
+
+@code {
+    private readonly MudTheme _theme = AppTheme.Create();
+    private bool _drawer = true, _dark;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            _dark = await JS.InvokeAsync<bool>("raUi.getDark");
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (JSDisconnectedException)
+        {
+            // circuit هنگام راه‌اندازی بسته شده است.
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        _dark = !_dark;
+        try
+        {
+            await JS.InvokeVoidAsync("raUi.setDark", _dark);
+        }
+        catch (JSDisconnectedException)
+        {
+            // ذخیرهٔ ترجیح ظاهری با circuit قطع‌شده ممکن نیست.
+        }
+    }
+}

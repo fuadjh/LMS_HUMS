@@ -1,0 +1,5 @@
+﻿@page "/console/scopes"
+@attribute [Authorize(Policy = "ConsoleAdmin")]
+
+<PageTitle>محدوده‌ها</PageTitle>
+<CatalogPage Kind="CatalogKind.Scopes" />

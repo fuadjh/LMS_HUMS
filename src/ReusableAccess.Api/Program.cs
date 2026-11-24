@@ -1,0 +1,116 @@
+using ReusableAccess.Api.Academics;
+using ReusableAccess.Infrastructure.Academics;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
+using OpenIddict.Abstractions;
+using OpenIddict.Server;
+using ReusableAccess.Api;
+using ReusableAccess.Api.Authorization;
+using ReusableAccess.Api.Completion;
+using ReusableAccess.Application;
+using ReusableAccess.Infrastructure;
+
+const string apiResource = "urn:reusableaccess:api";
+
+var builder = WebApplication.CreateBuilder(args);
+
+// سرویس‌های پایهٔ API
+builder.Services.AddDataProtection();
+builder.Services.AddControllers();
+builder.Services.AddRazorPages();
+builder.Services.AddProblemDetails();
+builder.Services.AddOpenApi();
+
+builder.Services.AddApplication();
+builder.Services.AddUniversityLms();
+builder.Services.AddLmsProxyTrust(builder.Configuration);
+
+// خواندن و اعتبارسنجی تنظیمات
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection");
+
+var clientSecret =
+    builder.Configuration["Authentication:OpenIddict:ClientSecret"];
+
+if (string.IsNullOrWhiteSpace(clientSecret))
+{
+    throw new InvalidOperationException(
+        "OpenIddict client secret is not configured.");
+}
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'DefaultConnection' is not configured.");
+}
+
+// ثبت Infrastructure و سرویس‌های امنیتی
+builder.Services.AddInfrastructure(connectionString);
+
+// AddIdentityCore و AddSignInManager در Infrastructure ثبت شده‌اند.
+// Handlerهای Cookie موردنیاز ورود تعاملی API را اینجا اضافه می‌کنیم.
+builder.Services
+    .AddAuthentication()
+    .AddIdentityCookies();
+
+builder.Services.AddReusableAccessAuthorization();
+builder.Services.AddReusableAccessApiAuthorization();
+
+builder.Services.AddCompletionApi();
+builder.Services.AddCompletionDeployment(
+    builder.Configuration, builder.Environment);
+
+builder.Services.AddReusableAccessOpenIddict(
+    apiResource, builder.Configuration, builder.Environment);
+
+var app = builder.Build();
+
+// تنظیمات نهایی OpenIddict را قبل از عملیات نوشتنی startup بررسی کن.
+_ = app.Services
+    .GetRequiredService<IOptionsMonitor<OpenIddictServerOptions>>()
+    .CurrentValue;
+
+await app.Services.BootstrapCompletionAdminAsync(app.Configuration);
+
+await app.InitializeReusableAccessAsync(clientSecret, apiResource);
+
+//==============
+if (app.Environment.IsDevelopment())
+{
+    await using var clientCheckScope = app.Services.CreateAsyncScope();
+
+    var applicationManager = clientCheckScope.ServiceProvider
+        .GetRequiredService<IOpenIddictApplicationManager>();
+
+    var webClient = await applicationManager.FindByClientIdAsync(
+        "ReusableAccess.Web");
+
+    var registeredSecretIsValid =
+        webClient is not null &&
+        await applicationManager.ValidateClientSecretAsync(
+            webClient,
+            clientSecret);
+
+    app.Logger.LogInformation(
+        "DEV diagnostic: API secret matches registered Web client: {Matches}",
+        registeredSecretIsValid);
+}
+
+//==============
+
+
+await app.Services.SeedCompletionCatalogAsync();
+await app.Services.SeedUniversityLmsAsync();
+
+await app.Services.SeedCompletionDemoAsync(
+    app.Configuration,
+    app.Environment);
+
+app.UseForwardedHeaders();
+app.UseMiddleware<LmsAuditMiddleware>();
+app.UseReusableAccessApi();
+app.MapUniversityLms();
+app.MapOwnAccountEndpoints();
+app.MapCompletionEndpoints();
+app.MapCompletionPresentation();
+app.Run();

@@ -1,0 +1,11 @@
+﻿@page "/access-profiles"
+@attribute [Authorize]
+
+<PageTitle>انتخاب دسترسی فعال</PageTitle>
+
+<AppPage Title="انتخاب دسترسی فعال"
+         Description="این انتخاب برای نشست فعلی است؛ API همچنان هر درخواست را اعتبارسنجی می‌کند.">
+    <MudPaper Class="ra-surface pa-5" Elevation="0">
+        <AccessProfilePanel />
+    </MudPaper>
+</AppPage>

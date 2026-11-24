@@ -1,0 +1,9 @@
+{
+  "ConnectionStrings": { "DefaultConnection": "" },
+  "Hosting": { "WebOrigin": "https://localhost:7136/", "TrustedProxyIps": [] },
+  "Authentication": { "OpenIddict": { "ClientSecret": "" } },
+  "BootstrapAdmin": { "Enabled": false },
+  "Demo": { "Enabled": false },
+  "Deployment": { "ApplicationName": "ReusableAccess", "DataProtectionKeysPath": "" },
+  "Lms": { "PrivateFilesPath": "", "SmsProviders": {} }
+}

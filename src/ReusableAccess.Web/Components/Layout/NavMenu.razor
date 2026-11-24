@@ -1,0 +1,57 @@
+<MudNavMenu>
+    <AuthorizeView>
+        <MudNavLink Href="/lms" Icon="@Icons.Material.Filled.School">سامانهٔ یادگیری</MudNavLink>
+    </AuthorizeView>
+    <MudNavLink Href="/console" Match="NavLinkMatch.All"
+                Icon="@Icons.Material.Filled.Dashboard">
+        نمای کلی
+    </MudNavLink>
+
+    <AuthorizeView Policy="ConsoleAdmin">
+        <Authorized>
+            <MudText Typo="Typo.caption" Class="px-4 pt-5 pb-2">مدیریت</MudText>
+            <MudNavLink Href="/console/users" Icon="@Icons.Material.Filled.People">
+                کاربران
+            </MudNavLink>
+            <MudNavLink Href="/console/roles" Icon="@Icons.Material.Filled.AdminPanelSettings">
+                نقش‌ها و مجوزها
+            </MudNavLink>
+            <MudNavLink Href="/console/scopes" Icon="@Icons.Material.Filled.AccountTree">
+                محدوده‌ها
+            </MudNavLink>
+            <MudNavLink Href="/console/assignments" Icon="@Icons.Material.Filled.Assignment">
+                تخصیص‌ها و بسته‌ها
+            </MudNavLink>
+            <MudNavLink Href="/console/settings" Icon="@Icons.Material.Filled.Settings">
+                تنظیمات ورود
+            </MudNavLink>
+            <MudNavLink Href="/console/audit" Icon="@Icons.Material.Filled.History">
+                تاریخچهٔ تغییرات
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <MudText Typo="Typo.caption" Class="px-4 pt-5 pb-2">محیط کاری</MudText>
+
+    <AuthorizeView Policy="Console:workitems.read">
+        <Authorized>
+            <MudNavLink Href="/console/work-items" Icon="@Icons.Material.Filled.Task">
+                موارد کاری
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+    <AuthorizeView Policy="Console:reports.read">
+        <Authorized>
+            <MudNavLink Href="/console/reports" Icon="@Icons.Material.Filled.Assessment">
+                گزارش‌ها
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+    <AuthorizeView Policy="Console:diagnostics.read">
+        <Authorized>
+            <MudNavLink Href="/console/diagnostics" Icon="@Icons.Material.Filled.Policy">
+                آزمایش مجوز
+            </MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+</MudNavMenu>

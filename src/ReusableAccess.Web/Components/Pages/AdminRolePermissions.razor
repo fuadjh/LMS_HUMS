@@ -1,0 +1,36 @@
+﻿@page "/admin/roles/{RoleId:guid}/permissions"
+@attribute [Authorize(Policy = "ConsoleAdmin")]
+
+<PageTitle>مجوزهای نقش</PageTitle>
+
+<AppPage Title="مجوزهای نقش"
+         Description="ویرایش و ذخیرهٔ مجوزها در مودال مشترک انجام می‌شود.">
+    <Actions>
+        <MudButton Href="/admin/roles" Variant="Variant.Outlined">
+            بازگشت به نقش‌ها
+        </MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="() => _open = true">
+            بازکردن ویرایشگر مجوزها
+        </MudButton>
+    </Actions>
+</AppPage>
+
+<RolePermissionsDialog @key="RoleId"
+                       RoleId="@RoleId"
+                       @bind-Visible="_open" />
+
+@code {
+    [Parameter] public Guid RoleId { get; set; }
+    private Guid? _previousRole;
+    private bool _open;
+
+    protected override void OnParametersSet()
+    {
+        if (_previousRole == RoleId)
+            return;
+
+        _previousRole = RoleId;
+        _open = true;
+    }
+}

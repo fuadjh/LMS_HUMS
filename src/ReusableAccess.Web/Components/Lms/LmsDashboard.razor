@@ -1,0 +1,83 @@
+@page "/lms"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>سامانهٔ یادگیری</PageTitle>
+<div class="lms">
+    <header class="lms-head">
+        <div class="lms-row"><span class="lms-pill">محیط آموزشی دانشگاه</span><span>@DateText(DateTimeOffset.UtcNow) · تهران</span></div>
+        <h1>@(_home is null ? "سامانهٔ یادگیری" : $"سلام، {_home.DisplayName}")</h1>
+        <p>کلاس‌ها، پرونده‌های آموزشی و تقویم؛ با همان حساب دانشگاهی.</p>
+    </header>
+    @if (Error is not null) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy && _home is null) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_home is { } h)
+    {
+        @if (h.PlatformAdmin || h.EducationAdmin)
+        {
+            <section class="lms lms-admin mb-4" aria-labelledby="lms-admin-label">
+                <h2 id="lms-admin-label">میز مدیریت آموزشی</h2><p class="lms-muted">ساختار، افراد و گروه‌ها در قلمرو مجاز.</p>
+                <div class="lms-grid">
+                    @Card("ساختار و نیم‌سال", "دانشکده، رشته، مقطع، ورودی، درس و حذف‌واضافه", "/lms/admin/catalog", LmsPermissions.CatalogRead)
+                    @Card("استادان و دانشجویان", "استعلام کد ملی، پرونده و ورود Excel", "/lms/admin/people", LmsPermissions.PeopleRead)
+                    @Card("ارائه‌ها و ثبت‌نام", "واگذاری استاد و مدیریت فهرست ارائه", "/lms/offerings/admin", LmsPermissions.Assign)
+                    @if (h.PlatformAdmin)
+                    {
+                        @Card("قلمرو ادمین‌ها", "تخصیص قلمرو دانشکده و رشته", "/lms/admin/grants", LmsPermissions.Grant)
+                        @Card("لاگ و پیامک", "پیگیری ارسال‌ها، رویداد امنیتی و تنظیم درگاه", "/lms/admin/operations", LmsPermissions.Logs)
+                        @Card("کاربران و نقش‌ها", "مدیریت سراسری حساب و مجوزهای طبقه‌بندی‌شده", "/console/roles", LmsPermissions.Grant)
+                    }
+                </div>
+            </section>
+        }
+        @if (h.Teacher)
+        {
+            <section class="lms lms-teacher mb-4" aria-labelledby="lms-teacher-label">
+                <div class="lms-row">
+                    @if (h.TeacherAvatar is { } avatar) { <img class="lms-avatar" alt="تصویر پروفایل استاد" src="@($"/bff/lms/files/{avatar:D}")" /> }
+                    <div><h2 id="lms-teacher-label">میز استاد</h2><p class="lms-muted">@h.TeacherLabel</p></div>
+                    @if (h.CvUrl is not null) { <a class="lms-file" href="@h.CvUrl" target="_blank" rel="noopener noreferrer">رزومه</a> }
+                    @if (Can(LmsPermissions.OwnAvatar)) { <MudButton OnClick="() => OpenAvatar(false)">تصویر پروفایل</MudButton> }
+                </div>
+                <div class="lms-grid">
+                    @Card("ارائه‌های تدریس", "زمان‌بندی، فصل‌ها، تصحیح و قالب خصوصی", "/lms/offerings/teacher", LmsPermissions.Teach)
+                    @Card("تقویم استاد", "جلسه‌ها، مهلت‌ها و اعلان‌ها", "/lms/calendar/teacher", LmsPermissions.Calendar)
+                </div>
+            </section>
+        }
+        @if (h.Student)
+        {
+            <section class="lms-card" aria-labelledby="lms-student-label">
+                <div class="lms-row">
+                    @if (h.StudentAvatar is { } avatar) { <img class="lms-avatar" alt="تصویر پروفایل دانشجو" src="@($"/bff/lms/files/{avatar:D}")" /> }
+                    <div><h2 id="lms-student-label">میز دانشجو</h2><p class="lms-muted">@(h.StudyLabel ?? "پروندهٔ فعال انتخاب نشده است.")</p></div>
+                    @if (Can(LmsPermissions.OwnAvatar)) { <MudButton OnClick="() => OpenAvatar(true)">تصویر پروفایل</MudButton> }
+                </div>
+                <div class="lms-grid">
+                    @Card("دروس ارائه‌شده", "اخذ درس، محتوای کلاس و تکلیف", "/lms/offerings/student", LmsPermissions.Learn)
+                    @Card("تقویم و اعلان", "جلسه‌ها، مهلت‌ها و وضعیت یادآوری", "/lms/calendar/student", LmsPermissions.Calendar)
+                    @Card("کارنامهٔ غیررسمی", "نمره‌های منتشرشده و سابقهٔ ثبت‌نام", "/lms/transcript", LmsPermissions.Learn)
+                    @Card("گفتگو", "پیام گروهی یا خصوصیِ ورودی فعال", "/lms/chat", LmsPermissions.Chat)
+                </div>
+            </section>
+        }
+        @if (!h.Student && !h.Teacher && !h.PlatformAdmin && !h.EducationAdmin)
+        { <MudAlert Severity="Severity.Info">برای این حساب هنوز پروفایل یا قلمرو آموزشی ثبت نشده است.</MudAlert> }
+        <LmsDialog @bind-Visible="_avatar" Title="تصویر پروفایل" Lead="تصویر فقط در مسیر مجاز و خصوصی در دسترس است.">
+            <LmsUpload TargetId="@h.UserId" Purpose="@_purpose" Uploaded="AvatarChanged" />
+        </LmsDialog>
+    }
+</div>
+
+@code {
+    private LmsHome? _home;
+    private bool _avatar;
+    private MediaPurpose _purpose;
+    protected override Task OnInitializedAsync() => Run(async () => _home = await Get<LmsHome>("me"));
+    private bool Can(string p) => _home?.Permissions.Contains(p) == true;
+    private void OpenAvatar(bool student) { _purpose = student ? MediaPurpose.StudentAvatar : MediaPurpose.InstructorAvatar; _avatar = true; }
+    private Task AvatarChanged(FileRow _) => Run(async () => _home = await Get<LmsHome>("me"));
+    private RenderFragment Card(string title, string hint, string href, string permission) => @<text>
+        @if (Can(permission)) { <a class="lms-card lms-link" href="@href"><h3>@title</h3><p class="lms-muted">@hint</p></a> }
+    </text>;
+}

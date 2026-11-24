@@ -1,0 +1,107 @@
+@page "/lms/offerings/{View}"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>@Title</PageTitle>
+<div class="@Panel">
+    <header class="lms-head"><h1>@Title</h1><p>@Description</p><a href="/lms" style="color:white">میز کار</a></header>
+    @if (Error is not null && !_edit) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    <div class="lms-card lms-row">
+        <LmsChoice Label="نیم‌سال ارائه" Options="@_terms" @bind-Value="_termFilter" EmptyText="همهٔ نیم‌سال‌ها" />
+        @if (View != "teacher") { <LmsChoice Label="ورودی" Options="@_cohorts" @bind-Value="_cohortFilter" EmptyText="همهٔ واجد شرایط" /> }
+        @if (View == "student") { <label class="lms-inline"><input type="checkbox" @bind="_mine" /> فقط سابقهٔ خودم</label> }
+        <MudButton OnClick="Reload" Disabled="@Busy">اعمال فیلتر</MudButton>
+        <MudButton Variant="Variant.Outlined" OnClick="OpenSearch">جستجو</MudButton>
+        @if (View == "admin" && _home?.Permissions.Contains(LmsPermissions.Assign) == true)
+        { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Start(null)">افزودن گروه</MudButton> }
+    </div>
+    <div class="lms-grid">
+        @foreach (var row in _rows)
+        {
+            <article class="lms-card" @key="row.Id">
+                <div class="lms-row"><span class="lms-pill">@Audience(row.Audience)</span>
+                    @if (View == "student") { <span class="lms-pill lms-ok">@State(row.Status)</span> }
+                    @if (row.Closed) { <span class="lms-pill lms-warn">پایان‌یافته</span> }
+                    @if (!row.Active) { <span class="lms-pill">بایگانی</span> }
+                </div>
+                <h2>@row.Course</h2><p>گروه @Fa(row.Group) · @Fa(row.Term)</p><p class="lms-muted">استاد مسئول: @row.Lead</p>
+                @if (View != "student") { <p class="lms-muted">نمایش: <bdi>@DateText(row.VisibleUtc)</bdi> · @(row.PublishedUtc.HasValue ? "منتشرشده" : "پیش‌نویس")</p> }
+                <div class="lms-row">
+                    <MudButton Variant="Variant.Outlined" Href="@($"/lms/offer/{row.Id:D}/{View}")">مشاهدهٔ ارائه</MudButton>
+                    @if (View == "admin" && !row.Closed) { <MudButton OnClick="() => Start(row)">واگذاری یا بایگانی</MudButton> }
+                </div>
+            </article>
+        }
+    </div>
+    @if (_rows.Length == 0 && !Busy) { <p>ارائه‌ای مطابق فیلتر یا قلمرو پیدا نشد.</p> }
+</div>
+<LmsDialog @bind-Visible="_searchOpen" Title="جستجو در ارائه‌های مجاز" Busy="@Busy" Error="@Error" OnSave="Search" SaveText="جستجو">
+    <label>عنوان درس یا کد گروه<input @bind="_search" maxlength="80" /></label>
+    <p class="lms-muted">جستجو و فیلتر، واجدشرایط بودن دانشجو را عوض نمی‌کنند.</p>
+</LmsDialog>
+<LmsDialog @bind-Visible="_edit" Title="تعریف و واگذاری ارائه" Busy="@Busy" Error="@Error" OnSave="Save" Lead="این فرم گروه تدریس را تعیین می‌کند، نه انتشار. بایگانی هیچ ثبت‌نام یا نمره‌ای را پاک نمی‌کند.">
+    <div class="lms-grid">
+        <LmsChoice Label="درس کاتالوگ" Options="@_courses" @bind-Value="_course" Disabled="@_editing.HasValue" />
+        <LmsChoice Label="نیم‌سال" Options="@(_terms.Where(x => x.Active && !x.Closed))" @bind-Value="_term" Disabled="@_editing.HasValue" />
+        <label>کد گروه<input @bind="_group" maxlength="50" disabled="@_published" /></label>
+        <LmsChoice Label="استاد مسئول" Options="@_instructors" @bind-Value="_lead" Disabled="@_published" />
+        <label>مخاطب<select @bind="_audience" disabled="@_published">
+            @if (_home?.PlatformAdmin == true) { <option value="General">عمومی دانشگاه</option> }
+            <option value="Common">مشترک دانشکده</option><option value="Specialized">تخصصی رشته</option>
+        </select></label>
+        @if (_audience == OfferingAudience.Specialized)
+        { <LmsChoice Label="رشته" Options="@(_majors.Where(x => x.ParentId == _courses.FirstOrDefault(y => y.Id == _course)?.ParentId))" @bind-Value="_major" Disabled="@_published" /> }
+    </div>
+    <p class="lms-muted">بدون انتخاب ورودی: همهٔ ورودی‌های واجد شرایط در مخاطب فوق.</p>
+    <div style="max-height:14rem;overflow:auto">
+        @foreach (var c in _cohorts)
+        { <label class="lms-inline"><input type="checkbox" checked="@_targets.Contains(c.Id)" disabled="@_published" @onchange="e => Pick(c.Id, e)" /> @Fa(c.Title)</label> }
+    </div>
+    <label class="lms-inline"><input type="checkbox" @bind="_active" /> فعال</label>
+</LmsDialog>
+
+@code {
+    [Parameter] public string View { get; set; } = "student";
+    private string Panel => View == "admin" ? "lms lms-admin" : View == "teacher" ? "lms lms-teacher" : "lms";
+    private string Title => View == "admin" ? "مدیریت ارائه و گروه" : View == "teacher" ? "ارائه‌های تدریس من" : "دروس ارائه‌شده";
+    private string Description => View == "admin" ? "درس کاتالوگ با گروه تدریس و استاد مسئول فرق دارد." : View == "teacher" ? "زمان نمایش، جلسه‌ها و تاریخچهٔ تدریس" : "گروه‌های واجد شرایط، درس‌های اخذشده و وضعیت حذف‌واضافه";
+    private LmsHome? _home;
+    private OfferingRow[] _rows = [];
+    private CatalogRow[] _terms = [], _cohorts = [], _courses = [], _majors = [], _instructors = [];
+    private Guid? _termFilter, _cohortFilter, _editing, _term, _course, _lead, _major;
+    private string _search = "", _group = "";
+    private bool _mine, _edit, _searchOpen, _active, _published;
+    private OfferingAudience _audience;
+    private HashSet<Guid> _targets = [];
+    protected override Task OnParametersSetAsync() => Run(async () =>
+    {
+        if (View is not ("admin" or "student" or "teacher")) throw new ArgumentException("نوع پنل نامعتبر است.");
+        _home = await Get<LmsHome>("me"); _terms = await Get<CatalogRow[]>("catalog/terms");
+        _cohorts = View == "teacher" ? [] : await Get<CatalogRow[]>("catalog/cohorts");
+        if (View == "admin")
+        {
+            _courses = await Get<CatalogRow[]>("catalog/courses"); _majors = await Get<CatalogRow[]>("catalog/majors");
+            _instructors = (await Get<PeopleRow[]>("people/teacher")).Where(p => p.ProfileActive && p.AccountActive).Select(p => new CatalogRow(p.UserId, p.DisplayName)).ToArray();
+        }
+        await Load();
+    });
+    private async Task Load() => _rows = await Get<OfferingRow[]>($"offerings?view={View}&mine={_mine.ToString().ToLowerInvariant()}&search={Q(_search)}"
+        + (_termFilter is { } t ? $"&termId={t:D}" : "") + (_cohortFilter is { } c ? $"&cohortId={c:D}" : ""));
+    private Task Reload() => Run(Load);
+    private void OpenSearch() => _searchOpen = true;
+    private Task Search() => Run(async () => { await Load(); _searchOpen = false; });
+    private void Start(OfferingRow? row)
+    {
+        _editing = row?.Id; _course = row?.CourseId; _term = row?.TermId ?? _termFilter; _lead = row?.LeadId; _major = row?.OwnerMajorId;
+        _group = row?.Group ?? ""; _audience = row?.Audience ?? OfferingAudience.Specialized; _targets = (row?.CohortIds ?? []).ToHashSet();
+        _active = row?.Active ?? true; _published = row?.PublishedUtc.HasValue == true; _edit = true;
+    }
+    private void Pick(Guid id, ChangeEventArgs e) { if (e.Value is true) _targets.Add(id); else _targets.Remove(id); }
+    private Task Save() => Run(async () =>
+    {
+        if (_course is not { } c || _term is not { } t || _lead is not { } i) throw new ArgumentException("درس، نیم‌سال و استاد مسئول الزامی هستند.");
+        _ = await Post<Guid>("offerings", new OfferingEdit(_editing, c, t, i, _audience == OfferingAudience.Specialized ? _major : null, _group, _audience, _targets.ToArray(), _active));
+        _edit = false; Snack.Add("ارائه به‌روز شد.", Severity.Success); await Load();
+    });
+}

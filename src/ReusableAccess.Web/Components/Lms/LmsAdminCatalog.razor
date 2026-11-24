@@ -1,0 +1,91 @@
+@page "/lms/admin/catalog"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>ساختار دانشگاه</PageTitle>
+<div class="lms lms-admin">
+    <header class="lms-head"><h1>ساختار و تقویم آموزشی</h1><p>ورودی تحصیلی با نیم‌سال تدریس جداست. همهٔ ساعت‌ها به وقت تهران‌اند.</p><a href="/lms" style="color:white">میز کار</a></header>
+    <div class="lms-card lms-row">
+        @foreach (var group in Kinds) { <MudButton Variant="@(_kind == group.Key ? Variant.Filled : Variant.Text)" OnClick="() => Switch(group.Key)" Disabled="@Busy">@group.Value</MudButton> }
+    </div>
+    @if (Error is not null && !_open) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    <div class="lms-row">
+        <label>جستجو<input @bind="_search" @bind:event="oninput" placeholder="نام یا کد" /></label>
+        @if (CanWrite) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Edit(null)">افزودن</MudButton> }
+    </div>
+    <div class="lms-grid">
+        @foreach (var c in Filtered)
+        {
+            <article class="lms-card" @key="c.Id">
+                <h2>@c.Title</h2>
+                <div class="lms-row"><span class="lms-pill">@(c.Closed ? "بسته" : c.Active ? "فعال" : "بایگانی")</span><bdi>@c.Code</bdi></div>
+                @if (c.Calendar is { } calendar) { <p class="lms-muted">پایان نیم‌سال: <bdi>@DateText(calendar.EndsUtc)</bdi></p><p class="lms-muted">پایان حذف‌واضافه: <bdi>@DateText(calendar.DropClosesUtc)</bdi></p> }
+                @if (CanWrite && !c.Closed) { <MudButton OnClick="() => Edit(c)">ویرایش یا بایگانی</MudButton> }
+            </article>
+        }
+    </div>
+    @if (!Busy && !Filtered.Any()) { <p>رکوردی در این فهرست نیست.</p> }
+</div>
+<LmsDialog @bind-Visible="_open" Title="@(Kinds[_kind])" Busy="@Busy" Error="@Error" Lead="بایگانی از گردش فعال خارج می‌کند، اما هیچ سابقه‌ای پاک نمی‌شود." OnSave="Save">
+    <div class="lms-grid">
+        @if (_kind is "faculties" or "majors" or "degrees" or "courses")
+        { <label>کد<input @bind="_code" maxlength="50" /></label><label>نام<input @bind="_title" maxlength="180" /></label> }
+        @if (_kind is "majors" or "courses") { <LmsChoice Label="دانشکده" Options="@(Option("faculties"))" @bind-Value="_parent" Disabled="@_id.HasValue" /> }
+        @if (_kind == "programs")
+        {
+            <LmsChoice Label="رشته" Options="@(Option("majors"))" @bind-Value="_parent" Disabled="@_id.HasValue" />
+            <LmsChoice Label="مقطع" Options="@(Option("degrees"))" @bind-Value="_related" Disabled="@_id.HasValue" />
+        }
+        @if (_kind == "cohorts") { <LmsChoice Label="برنامهٔ رشته/مقطع" Options="@(Option("programs"))" @bind-Value="_parent" Disabled="@_id.HasValue" /> }
+        @if (_kind is "terms" or "cohorts")
+        {
+            <label>سال شمسی<input type="number" min="1300" max="1600" @bind="_year" disabled="@_id.HasValue" /></label>
+            <label>فصل<select @bind="_season" disabled="@_id.HasValue"><option value="Mehr">مهر</option><option value="Bahman">بهمن</option>
+                @if (_kind == "terms") { <option value="Summer">تابستان</option> }</select></label>
+        }
+        @if (_kind == "terms")
+        {
+            @for (var a = 0; a < DateLabels.Length; a++)
+            {
+                var i = a;
+                <label>@DateLabels[i]<input class="lms-date" placeholder="۱۴۰۵/۰۹/۰۱ ۰۸:۰۰" @bind="_dates[i]" /></label>
+            }
+            @if (_id.HasValue) { <label class="lms-inline"><input type="checkbox" @bind="_close" /> بستن قطعی؛ ثبت و ویرایش آموزشی متوقف می‌شود.</label> }
+        }
+    </div>
+    <label class="lms-inline"><input type="checkbox" @bind="_active" /> فعال (برداشتن تیک = بایگانی)</label>
+</LmsDialog>
+
+@code {
+    private static readonly Dictionary<string,string> Kinds = new() { ["faculties"] = "دانشکده‌ها", ["majors"] = "رشته‌ها", ["degrees"] = "مقاطع", ["programs"] = "برنامه‌های آموزشی", ["cohorts"] = "ورودی‌ها", ["terms"] = "نیم‌سال‌ها", ["courses"] = "کاتالوگ درس" };
+    private static readonly string[] DateLabels = ["شروع نیم‌سال", "پایان نیم‌سال", "شروع اخذ", "پایان اخذ", "شروع حذف‌واضافه", "پایان حذف‌واضافه"];
+    private readonly Dictionary<string,CatalogRow[]> _rows = [];
+    private string _kind = "faculties", _search = "", _code = "", _title = "";
+    private string?[] _dates = new string?[6];
+    private LmsHome? _user;
+    private bool _open, _active, _close;
+    private Guid? _id, _parent, _related;
+    private int _year;
+    private TermSeason _season;
+    private CatalogRow[] Option(string key) => _rows.GetValueOrDefault(key) ?? [];
+    private IEnumerable<CatalogRow> Filtered => Option(_kind).Where(x => $"{x.Title} {x.Code}".Contains(_search, StringComparison.OrdinalIgnoreCase));
+    private bool CanWrite => _user?.Permissions.Contains(LmsPermissions.CatalogWrite) == true && (_user.PlatformAdmin || _kind is not ("terms" or "faculties" or "degrees"));
+    protected override Task OnInitializedAsync() => Run(async () => { _user = await Get<LmsHome>("me"); await Reload(); });
+    private async Task Reload() { foreach (var key in Kinds.Keys) _rows[key] = await Get<CatalogRow[]>("catalog/" + key); }
+    private Task Switch(string key) { _kind = key; _search = ""; return Task.CompletedTask; }
+    private void Edit(CatalogRow? row)
+    {
+        _id = row?.Id; _parent = row?.ParentId; _related = row?.RelatedId;
+        _code = row?.Code ?? ""; _title = row?.Title ?? ""; _year = row?.Year is > 0 ? row.Year : new PersianCalendar().GetYear(JalaliTime.InTehran(DateTimeOffset.UtcNow));
+        _season = row?.Season ?? TermSeason.Mehr; _active = row?.Active ?? true; _close = false;
+        _dates = row?.Calendar is { } c ? [DateInput(c.StartsUtc), DateInput(c.EndsUtc), DateInput(c.EnrollOpensUtc), DateInput(c.EnrollClosesUtc), DateInput(c.DropOpensUtc), DateInput(c.DropClosesUtc)] : new string?[6];
+        _open = true;
+    }
+    private Task Save() => Run(async () =>
+    {
+        CalendarWindow? cal = _kind == "terms" ? new(InputDate(_dates[0]), InputDate(_dates[1]), InputDate(_dates[2]), InputDate(_dates[3]), InputDate(_dates[4]), InputDate(_dates[5])) : null;
+        _ = await Post<Guid>("catalog/" + _kind, new CatalogEdit(_id, _parent, _related, _code, _title, _year, _season, cal, _active, _close));
+        _open = false; Snack.Add("ساختار آموزشی ثبت شد.", Severity.Success); await Reload();
+    });
+}

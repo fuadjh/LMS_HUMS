@@ -1,0 +1,100 @@
+@page "/lms/calendar/{View}"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>تقویم آموزشی</PageTitle>
+<div class="@(View == "teacher" ? "lms lms-teacher" : "lms")">
+    <header class="lms-head"><h1>تقویم جلالی @(View == "teacher" ? "استاد" : "دانشجو")</h1><p>جلسه‌ها، موعد تکلیف و پایان حذف‌واضافه · تهران</p><a href="/lms" style="color:white">میز کار</a></header>
+    @if (Error is not null && !_open && !_noticesOpen) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    <div class="lms-grid">
+        <section class="lms-card">
+            <div class="lms-row">
+                <MudButton OnClick="Previous" Disabled="@Busy">ماه قبل</MudButton>
+                <h2>@(Months[_month - 1]) @Fa(_year)</h2>
+                <MudButton OnClick="Next" Disabled="@Busy">ماه بعد</MudButton>
+                <MudButton OnClick="Today" Disabled="@Busy">امروز</MudButton>
+            </div>
+            <div class="lms-calendar" aria-label="شبکه ماهانه تقویم جلالی">
+                @foreach (var weekday in Weekdays) { <strong>@weekday</strong> }
+                @for (var i = 0; i < _offset; i++) { <span></span> }
+                @for (var i = 1; i <= _length; i++)
+                {
+                    var day = i;
+                    var count = ForDay(i).Length;
+                    <button type="button" class="lms-day" aria-pressed="@(_picked == i ? "true" : "false")" @onclick="() => Pick(day)">
+                        @Fa(i) @if (count > 0) { <span class="lms-pill lms-ok" aria-label="@($"{Fa(count)} رویداد")">@Fa(count)</span> }
+                    </button>
+                }
+            </div>
+        </section>
+        <section class="lms-card">
+            <h2>یادآوری‌ها</h2><p class="lms-muted">جلسه‌ها و مهلت‌های نزدیک، پس از ثبت توسط برنامه در این بخش ظاهر می‌شوند.</p>
+            <div class="lms-row"><span class="lms-pill">@Fa(_notices.Count(x => !x.Read)) اعلان خوانده‌نشده</span><MudButton OnClick="OpenNotices" Disabled="@Busy">نمایش اعلان‌ها</MudButton></div>
+            @foreach (var item in _entries.Where(x => x.AtUtc >= DateTimeOffset.UtcNow).Take(6))
+            { <p><span class="lms-pill">@Kind(item.Kind)</span> @item.Title <bdi>@DateText(item.AtUtc)</bdi></p> }
+        </section>
+    </div>
+</div>
+<LmsDialog @bind-Visible="_open" Title="@($"رویدادهای {Fa(_picked)} {Months[_month - 1]}")" Error="@Error">
+    @foreach (var e in ForDay(_picked))
+    { <article class="lms-card my-2"><h3>@e.Title</h3><p>@Kind(e.Kind) · <bdi>@DateText(e.AtUtc)</bdi></p><a class="lms-file" href="@($"/lms/offer/{e.OfferingId:D}/{View}")">ارائه</a></article> }
+    @if (ForDay(_picked).Length == 0) { <p>رویدادی ثبت نشده است.</p> }
+</LmsDialog>
+<LmsDialog @bind-Visible="_noticesOpen" Title="اعلان‌های شخصی" Busy="@Busy" Error="@Error" Lead="«پذیرش درگاه» تحویل به گوشی را تأیید نمی‌کند. اعلان داخلی مستقل از پیامک است.">
+    @foreach (var n in _notices)
+    {
+        <article class="lms-card my-2" @key="n.Id"><h3>@n.Title</h3><p>@Kind(n.Kind) · @DateText(n.AtUtc)</p>
+            <p class="lms-muted">پیامک: @Sms(n.SmsState)</p>
+            @if (!n.Read) { <MudButton OnClick="() => Mark(n.Id)" Disabled="@Busy">خواندم</MudButton> }
+        </article>
+    }
+    @if (_notices.Length == 0) { <p>اعلانی موجود نیست.</p> }
+</LmsDialog>
+
+@code {
+    private static readonly string[] Months = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+    private static readonly string[] Weekdays = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
+    private readonly PersianCalendar _calendar = new();
+    [Parameter] public string View { get; set; } = "student";
+    private CalendarEntry[] _entries = [];
+    private NoticeRow[] _notices = [];
+    private int _year = 1405, _month = 1, _length = 30, _offset, _picked;
+    private bool _open, _noticesOpen;
+    protected override Task OnParametersSetAsync() => Today();
+    private Task Today() => Run(async () =>
+    {
+        if (View is not ("teacher" or "student")) throw new ArgumentException("پنل معتبر نیست.");
+        var local = JalaliTime.InTehran(DateTimeOffset.UtcNow);
+        _year = _calendar.GetYear(local); _month = _calendar.GetMonth(local); _picked = _calendar.GetDayOfMonth(local);
+        await Load(); await LoadNotices();
+    });
+    private Task Previous() => Step(-1);
+    private Task Next() => Step(1);
+    private Task Step(int amount) => Run(async () =>
+    {
+        var current = _calendar.AddMonths(First(), amount);
+        _year = _calendar.GetYear(current); _month = _calendar.GetMonth(current); _picked = 0; await Load();
+    });
+    private DateTime First() => _calendar.ToDateTime(_year, _month, 1, 0, 0, 0, 0);
+    private async Task Load()
+    {
+        _length = _calendar.GetDaysInMonth(_year, _month);
+        var first = First(); _offset = ((int)first.DayOfWeek + 1) % 7;
+        // UTC instants cover the local Persian calendar month, including historical offset rules.
+        var from = Boundary(first); var to = Boundary(first.AddDays(_length));
+        _entries = await Get<CalendarEntry[]>($"calendar?view={View}&fromUtc={Q(from.ToString("O"))}&toUtc={Q(to.ToString("O"))}");
+    }
+    private static DateTimeOffset Boundary(DateTime midnight)
+    {
+        try { return JalaliTime.FromDate(midnight); }
+        catch (ArgumentException) { return JalaliTime.FromDate(midnight.AddHours(1)); }
+    }
+    private CalendarEntry[] ForDay(int day) => _entries.Where(e => _calendar.GetDayOfMonth(JalaliTime.InTehran(e.AtUtc)) == day).ToArray();
+    private void Pick(int day) { _picked = day; _open = true; }
+    private Task OpenNotices() => Run(async () => { await LoadNotices(); _noticesOpen = true; });
+    private async Task LoadNotices() => _notices = await Get<NoticeRow[]>("notices");
+    private Task Mark(Guid id) => Run(async () => { _ = await Post<bool>($"notices/{id:D}/read"); await LoadNotices(); }, "اعلان خوانده شد.");
+    private static string Kind(string k) => k switch { "session" => "بازشدن جلسه", "due" => "موعد تکلیف", "cutoff" => "پایان ارسال دیرهنگام", "add-drop" => "پایان حذف‌واضافه", _ => k };
+    private static string Sms(string s) => s switch { "GatewayAccepted" => "درگاه پذیرفت", "GatewayRejected" => "درگاه رد کرد", "NotConfigured" => "پیکربندی نشده", "UnverifiedPhone" => "موبایل تأیید نشده", "Unknown" => "نامعلوم", "KeyUnavailable" => "کلید در دسترس نیست", "Missed" => "مهلت گذشته", _ => "در انتظار" };
+}

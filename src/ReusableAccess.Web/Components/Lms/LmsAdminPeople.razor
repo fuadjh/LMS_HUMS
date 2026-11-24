@@ -1,0 +1,153 @@
+@page "/lms/admin/people"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>اشخاص آموزشی</PageTitle>
+<div class="lms lms-admin">
+    <header class="lms-head"><h1>استادان و دانشجویان</h1><p>یک کد ملی، یک حساب. تغییر پروفایلْ نقش دیگر فرد را تغییر نمی‌دهد.</p><a href="/lms" style="color:white">میز کار</a></header>
+    <div class="lms-card">
+        <div class="lms-row">
+            <MudButton Variant="@(_kind == "teacher" ? Variant.Filled : Variant.Text)" OnClick="Teachers" Disabled="@Busy">استادان</MudButton>
+            <MudButton Variant="@(_kind == "student" ? Variant.Filled : Variant.Text)" OnClick="Students" Disabled="@Busy">دانشجویان</MudButton>
+            @if (Can(LmsPermissions.PeopleWrite)) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Open(null)">افزودن / ویرایش با کد ملی</MudButton> }
+            @if (Can(LmsPermissions.Import)) { <MudButton Variant="Variant.Outlined" OnClick="StartImport">ورود Excel</MudButton> }
+        </div>
+        <div class="lms-row">
+            <label>نام، شماره دانشجویی یا گروه<input @bind="_search" maxlength="80" /></label>
+            <LmsChoice Label="فیلتر قلمرو" Options="@Choices" @bind-Value="_filter" EmptyText="همهٔ مجازها" />
+            <MudButton Disabled="@Busy" OnClick="Search">جستجو</MudButton>
+        </div>
+    </div>
+    @if (Error is not null && !_edit && !_import && !_history && !_toggle) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    <div class="lms-grid">
+        @foreach (var p in _people)
+        {
+            <article class="lms-card" @key="p.UserId">
+                <h2>@p.DisplayName</h2><p>@p.Label @p.Classification</p>
+                <p class="lms-muted">حساب: @(p.AccountActive ? "فعال" : "غیرفعال") · پروفایل: @(p.ProfileActive ? "فعال" : "غیرفعال") @p.Number</p>
+                @if (p.CvUrl is not null) { <a class="lms-file" href="@p.CvUrl" target="_blank" rel="noopener noreferrer">رزومهٔ خارجی</a> }
+                <div class="lms-row">
+                    @if (Can(LmsPermissions.PeopleWrite))
+                    {
+                        <MudButton OnClick="() => Open(p)">ویرایش</MudButton>
+                        @if (p.ProfileActive || _kind == "teacher") { <MudButton OnClick="() => OpenToggle(p)">@(p.ProfileActive ? "غیرفعال‌کردن" : "فعال‌کردن")</MudButton> }
+                    }
+                    @if (_kind == "student") { <MudButton OnClick="() => History(p.UserId)">سوابق تحصیل</MudButton> }
+                </div>
+            </article>
+        }
+    </div>
+    @if (_people.Length == 0 && !Busy) { <p>پروفایل مطابق فیلتر یافت نشد.</p> }
+</div>
+<LmsDialog @bind-Visible="_edit" Title="@(_kind == "student" ? "پروندهٔ دانشجو" : "پروفایل استاد")" Busy="@Busy" Error="@Error" Lead="پس از استعلام، حساب موجود بازنویسی نمی‌شود. انتقال دانشجو پروندهٔ قبلی را می‌بندد و تدریس او را تغییر نمی‌دهد.">
+    <div class="lms-grid">
+        <label>کد ملی<input class="lms-date" @bind="_national" maxlength="12" inputmode="numeric" disabled="@(_probe is not null)" autocomplete="off" /></label>
+        <LmsChoice Label="@ScopeLabel" Options="@Choices" @bind-Value="_scope" Disabled="@(_probe is not null)" />
+    </div>
+    <div class="lms-row">
+        <MudButton Variant="Variant.Outlined" Disabled="@Busy" OnClick="Probe">استعلام</MudButton>
+        @if (_probe is not null) { <MudButton OnClick="ResetProbe" Disabled="@Busy">استعلام دیگر</MudButton> }
+    </div>
+    @if (_probe is { } result)
+    {
+        <p class="lms-pill">@result.DisplayName · @(result.AccountExists ? result.AccountActive ? "حساب فعال" : "حساب غیرفعال" : "حساب ندارد") · @(result.IsInstructor ? "دارای پروفایل استاد" : "بدون استاد") · @(result.IsStudent ? "دارای پروفایل دانشجو" : "بدون دانشجو")</p>
+        @if (result.CanEditTarget)
+        {
+            <div class="lms-grid">
+                @if (!result.AccountExists)
+                {
+                    <label>نام<input @bind="_first" /></label><label>نام خانوادگی<input @bind="_last" /></label>
+                    <label>کد سازمانی<input @bind="_organization" /></label><label>ایمیل<input type="email" @bind="_email" dir="ltr" /></label>
+                    <label>موبایل<input @bind="_mobile" dir="ltr" /></label><label>رمز موقت<input type="password" @bind="_password" autocomplete="new-password" /></label>
+                }
+                @if (_kind == "student") { <label>شمارهٔ دانشجویی<input @bind="_number" /></label> }
+                else { <label>گروه آموزشی (نمایشی)<input @bind="_classification" /></label><label>پیوند HTTPS رزومه<input type="url" @bind="_cv" dir="ltr" /></label> }
+            </div>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@Busy" OnClick="Save">تأیید و ثبت پروفایل</MudButton>
+        }
+        else { <MudAlert Severity="Severity.Warning">ویرایش پروفایل فعلی در قلمرو شما نیست.</MudAlert> }
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_toggle" Title="تغییر وضعیت پروفایل" Busy="@Busy" Error="@Error" OnSave="Toggle" Lead="حساب، پروفایل دیگر و سوابق آموزشی حذف نمی‌شوند. غیرفعال‌کردن دانشجو، پروندهٔ فعال او را می‌بندد.">
+    <p>@(_target?.DisplayName) · @( _target?.ProfileActive == true ? "غیرفعال شود" : "فعال شود")</p>
+</LmsDialog>
+<LmsDialog @bind-Visible="_history" Title="تاریخچهٔ پرونده" Busy="@Busy" Error="@Error">
+    @foreach (var r in _records) { <article class="lms-card my-2"><h3>@r.Cohort</h3><p>@r.Number · @DateText(r.OpenedUtc) تا @(r.EndedUtc is null ? "فعال" : DateText(r.EndedUtc))</p></article> }
+</LmsDialog>
+<LmsDialog @bind-Visible="_import" Title="ورود گروهی از Excel" Busy="@Busy" Error="@Error" Lead="کد ملی، موبایل و شمارهٔ دانشجویی را در Excel به‌صورت متن وارد کنید. حساب موجود بازنویسی نمی‌شود.">
+    <div class="lms-row">
+        <a class="lms-file" href="@($"/lms-templates/{_kind}.xlsx")" download>دریافت قالب</a>
+        <LmsChoice Label="@ScopeLabel" Options="@Choices" @bind-Value="_importScope" Disabled="@_excel.HasValue" />
+    </div>
+    @if (_importScope is { } scope)
+    { <LmsUpload @key="scope" TargetId="@scope" Purpose="MediaPurpose.RosterExcel" Uploaded="ExcelReady" /> }
+    <div class="lms-row">
+        <MudButton Disabled="@(!_excel.HasValue || Busy)" OnClick="Preview">پیش‌نمایش و اعتبارسنجی</MudButton>
+        <MudButton Disabled="@(!_preview.Any(x => x.Status == "آماده") || Busy)" OnClick="ApplyImport" Color="Color.Primary" Variant="Variant.Filled">تأیید ثبت ردیف‌های معتبر</MudButton>
+    </div>
+    @if (_preview.Length > 0)
+    {
+        <div class="lms-table-box"><table class="lms-table"><thead><tr><th>ردیف</th><th>شناسه پوشیده</th><th>وضعیت</th><th>جزئیات</th></tr></thead><tbody>
+            @foreach (var r in _preview) { <tr><td>@Fa(r.Line)</td><td><bdi>@r.MaskedNationalId</bdi></td><td>@r.Status</td><td>@r.Detail</td></tr> }
+        </tbody></table></div>
+    }
+</LmsDialog>
+
+@code {
+    private LmsHome? _home;
+    private CatalogRow[] _majors = [], _cohorts = [];
+    private PeopleRow[] _people = [];
+    private StudyRow[] _records = [];
+    private ImportRow[] _preview = [];
+    private string _kind = "teacher", _search = "", _national = "", _first = "", _last = "", _organization = "", _email = "", _mobile = "", _password = "", _number = "", _classification = "", _cv = "";
+    private Guid? _filter, _scope, _excel, _importScope;
+    private ProbeResult? _probe;
+    private PeopleRow? _target;
+    private bool _edit, _history, _toggle, _import;
+    private CatalogRow[] Choices => _kind == "student" ? _cohorts : _majors;
+    private string ScopeLabel => _kind == "student" ? "ورودی رشته و مقطع" : "رشتهٔ وابستگی استاد";
+    private bool Can(string permission) => _home?.Permissions.Contains(permission) == true;
+    protected override Task OnInitializedAsync() => Run(async () => { _home = await Get<LmsHome>("me"); _majors = await Get<CatalogRow[]>("catalog/majors"); _cohorts = await Get<CatalogRow[]>("catalog/cohorts"); await LoadPeople(); });
+    private Task Teachers() => Change("teacher");
+    private Task Students() => Change("student");
+    private Task Change(string kind) => Run(async () => { _kind = kind; _filter = null; _search = ""; await LoadPeople(); });
+    private async Task LoadPeople() => _people = await Get<PeopleRow[]>($"people/{_kind}?search={Q(_search)}" + (_filter is { } s ? $"&scopeId={s:D}" : ""));
+    private Task Search() => Run(LoadPeople);
+    private void Open(PeopleRow? row)
+    {
+        _probe = null; _scope = row is null ? _filter : _kind == "student" ? row.CohortId : row.MajorId;
+        _national = _first = _last = _organization = _email = _mobile = _password = "";
+        _number = row?.Number ?? ""; _classification = row?.Classification ?? ""; _cv = row?.CvUrl ?? ""; _edit = true;
+    }
+    private void ResetProbe() { _probe = null; _password = ""; }
+    private Task Probe() => Run(async () => _probe = await Post<ProbeResult>($"people/{_kind}/probe", new ProbeInput(_national, _scope ?? throw new ArgumentException("قلمرو آموزشی را انتخاب کنید."))));
+    private Task Save() => Run(async () =>
+    {
+        if (_probe?.CanEditTarget != true || _scope is not { } id) throw new ArgumentException("ابتدا استعلام کنید.");
+        _ = await Post<Guid>($"people/{_kind}", new ProfileEdit(_national, id, _first, _last, _organization, _email, _mobile, _password, _number, _classification, _cv));
+        _edit = false; _password = _national = ""; Snack.Add("پروفایل آموزشی ثبت شد.", Severity.Success); await LoadPeople();
+    });
+    private void OpenToggle(PeopleRow row) { _target = row; _toggle = true; }
+    private Task Toggle() => Run(async () =>
+    {
+        if (_target is not { } t) return;
+        _ = await Post<bool>($"people/{_kind}/{t.UserId:D}/active/{(!t.ProfileActive).ToString().ToLowerInvariant()}");
+        _toggle = false; Snack.Add("وضعیت ثبت شد.", Severity.Success); await LoadPeople();
+    });
+    private Task History(Guid id) => Run(async () => { _records = await Get<StudyRow[]>($"study/{id:D}"); _history = true; });
+    private void StartImport() { _preview = []; _excel = null; _importScope = _filter; _import = true; }
+    private Task ExcelReady(FileRow f) { _excel = f.Id; _preview = []; return Task.CompletedTask; }
+    private Task Preview() => Import(false);
+    private Task ApplyImport() => Import(true);
+    private Task Import(bool apply) => Run(async () =>
+    {
+        if (_excel is not { } media || _importScope is not { } scope) throw new ArgumentException("فایل و قلمرو الزامی‌اند.");
+        _preview = await Post<ImportRow[]>($"import/{_kind}/{media:D}/{scope:D}/{apply.ToString().ToLowerInvariant()}");
+        if (apply)
+        {
+            Snack.Add($"{Fa(_preview.Count(x => x.Status == "ثبت شد"))} ردیف ثبت شد؛ نتیجهٔ هر ردیف را ببینید.", _preview.Any(x => x.Status == "رد شد") ? Severity.Warning : Severity.Success);
+            await LoadPeople();
+        }
+    });
+}

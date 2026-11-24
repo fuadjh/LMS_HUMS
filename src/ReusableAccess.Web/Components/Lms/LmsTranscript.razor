@@ -1,0 +1,44 @@
+@page "/lms/transcript"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>کارنامهٔ غیررسمی</PageTitle>
+<div class="lms">
+    <header class="lms-head"><h1>کارنامهٔ غیررسمی</h1><p>فقط نمره‌های منتشرشدهٔ همین حساب · فاقد اعتبار مدرک رسمی</p><a href="/lms" style="color:white">میز کار</a></header>
+    @if (Error is not null) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    <div class="lms-grid">
+        @foreach (var r in _rows)
+        {
+            <article class="lms-card" @key="r.EnrollmentId">
+                <span class="lms-pill">@State(r.Status)</span><h2>@r.Course</h2><p>@Fa(r.Term) · گروه @Fa(r.Group)</p>
+                <p class="lms-muted">آخرین تغییر ثبت‌نام: @DateText(r.ChangedUtc)</p>
+                <MudButton OnClick="() => History(r)">تاریخچهٔ وضعیت</MudButton>
+                @if (r.UnofficialGrade is { } g)
+                { <p class="lms-pill lms-ok">@Fa(g.Score) از ۲۰</p><MudButton OnClick="() => Show(r)">بازخورد پایانی</MudButton> }
+                else { <p>نمرهٔ پایانی منتشر نشده است.</p> }
+                <p><a class="lms-file" href="@($"/lms/offer/{r.OfferingId:D}/student")">نمای ارائه</a></p>
+            </article>
+        }
+    </div>
+    @if (!Busy && _rows.Length == 0) { <p>سابقهٔ ثبت‌نامی وجود ندارد.</p> }
+</div>
+<LmsDialog @bind-Visible="_open" Title="نتیجهٔ غیررسمی" Lead="این نما فقط‌خواندنی است.">
+    @if (_selected is { UnofficialGrade: { } grade } row)
+    { <p><strong>@row.Course</strong> · @Fa(grade.Score) از ۲۰</p><p class="lms-plain">@grade.Feedback</p><p class="lms-muted">نسخهٔ @Fa(grade.Revision) · @DateText(grade.CreatedUtc)</p> }
+</LmsDialog>
+
+<LmsDialog @bind-Visible="_history" Title="تاریخچهٔ وضعیت ثبت‌نام" Error="@Error" Busy="@Busy">
+    @foreach (var item in _events) { <p>@State(item.Status) · @DateText(item.OccurredUtc)</p> }
+</LmsDialog>
+
+@code {
+    private TranscriptRow[] _rows = [];
+    private TranscriptRow? _selected;
+    private bool _open, _history;
+    private EnrollmentHistoryRow[] _events = [];
+    private Task History(TranscriptRow row) => Run(async () =>
+    { _events = await Get<EnrollmentHistoryRow[]>($"enrollments/{row.EnrollmentId:D}/history?view=student"); _history = true; });
+    protected override Task OnInitializedAsync() => Run(async () => _rows = await Get<TranscriptRow[]>("transcript"));
+    private void Show(TranscriptRow row) { _selected = row; _open = true; }
+}

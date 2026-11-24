@@ -1,0 +1,116 @@
+@page "/lms/admin/operations"
+@attribute [Authorize(Policy = "ConsoleAdmin")]
+@inherits LmsPage
+
+<PageTitle>لاگ‌های عملیاتی</PageTitle>
+<div class="lms lms-admin">
+    <header class="lms-head"><h1>لاگ‌های عملیاتی و پیامک</h1><p>فقط ادمین کل · نگه‌داری یک‌ماهه · زمان نمایش به وقت تهران</p><a href="/lms" style="color:white">میز کار</a></header>
+    <div class="lms-card">
+        <div class="lms-row"><MudButton OnClick="ShowUploads">ارسال فایل</MudButton><MudButton OnClick="ShowSecurity">رویدادهای امنیتی</MudButton><MudButton OnClick="OpenSms">تنظیم پیامک</MudButton></div>
+        <h2>@(_uploads ? "جستجوی ارسال‌ها" : "جستجوی امنیت")</h2>
+        <div class="lms-grid">
+            <label>از تاریخ/ساعت <input class="lms-date" @bind="_from" placeholder="۱۴۰۵/۰۹/۰۱" /></label>
+            <label>تا تاریخ/ساعت (غیرشامل) <input class="lms-date" @bind="_to" placeholder="۱۴۰۵/۰۹/۳۰" /></label>
+            <label>@(_uploads ? "نام فایل" : "نوع عمل")<input @bind="_name" maxlength="100" /></label>
+            <label>شناسهٔ کاربر<input dir="ltr" @bind="_actor" /></label>
+            @if (_uploads)
+            {
+                <label>کد پیگیری <input dir="ltr" @bind="_tracking" /></label>
+                <label>حداقل حجم اعلامی (بایت) <input inputmode="numeric" @bind="_min" /></label>
+                <label>حداکثر حجم اعلامی (بایت) <input inputmode="numeric" @bind="_max" /></label>
+                <label>وضعیت<select @bind="_status"><option value="">همه</option>
+                    @foreach (var v in Enum.GetValues<UploadState>()) { <option value="@v">@UploadStateLabel(v)</option> }
+                </select></label>
+            }
+            else
+            {
+                <label>نتیجه<select @bind="_outcome"><option value="">همه</option>
+                    @foreach (var value in Outcomes) { <option value="@value">@value</option> }
+                </select></label>
+            }
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@Busy" OnClick="Search">جستجو</MudButton>
+    </div>
+    @if (Error is not null && !_settings) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_uploads)
+    {
+        <p class="lms-muted">«تکمیل تأیید نشد» به‌معنای رد قطعی WAF نیست. حجم اعلامی و دریافت‌شده جداگانه‌اند.</p>
+        <div class="lms-card lms-table-box"><table class="lms-table"><thead><tr><th>زمان</th><th>نام و پیگیری</th><th>حجم</th><th>نتیجه</th><th>جزئیات</th></tr></thead><tbody>
+            @foreach (var x in _uploadRows)
+            { <tr><td><bdi>@DateText(x.CreatedUtc)</bdi></td><td>@x.Name<br /><bdi>@x.TrackingId</bdi></td><td>اعلامی @Size(x.ReportedBytes)<br />دریافتی @Size(x.ReceivedBytes)</td><td>@UploadStateLabel(x.State)<br /><bdi>@x.Code</bdi></td><td><MudButton OnClick="() => Details(x)">ردیابی</MudButton></td></tr> }
+        </tbody></table></div>
+        @if (_uploadRows.Length == 0 && !Busy) { <p>ارسالی مطابق فیلتر پیدا نشد.</p> }
+    }
+    else
+    {
+        <div class="lms-card lms-table-box"><table class="lms-table"><thead><tr><th>زمان</th><th>عمل و نتیجه</th><th>عامل و IP</th><th>منبع و همبستگی</th></tr></thead><tbody>
+            @foreach (var x in _securityRows)
+            { <tr><td><bdi>@DateText(x.OccurredUtc)</bdi></td><td><bdi>@x.Action</bdi><br /><bdi>@x.Outcome · @x.HttpStatus</bdi></td>
+                <td><bdi>@(x.ActorId?.ToString() ?? "نامعلوم")</bdi><br /><bdi>@(x.Ip ?? "نامعلوم")</bdi></td><td><bdi>@(x.ResourceId?.ToString() ?? "—")</bdi><br /><bdi>@(x.Correlation ?? "—")</bdi></td></tr> }
+        </tbody></table></div>
+        @if (_securityRows.Length == 0 && !Busy) { <p>رویدادی مطابق فیلتر پیدا نشد.</p> }
+    }
+    <div class="lms-row"><MudButton Disabled="@(_page == 1 || Busy)" OnClick="Prev">قبلی</MudButton><span>صفحهٔ @Fa(_page)</span><MudButton Disabled="@(!_more || Busy)" OnClick="Next">بعدی</MudButton></div>
+</div>
+<LmsDialog @bind-Visible="_detail" Title="جزئیات ارسال">
+    @if (_selected is { } d)
+    {
+        <p>منبع: <bdi>@d.TargetId</bdi></p><p>عامل: <bdi>@d.ActorId</bdi></p><p>IP مشاهده‌شده: <bdi>@(d.Ip ?? "نامعلوم")</bdi></p>
+        <p>همبستگی برنامه: <bdi>@(d.Correlation ?? "نامعلوم")</bdi></p><p>آخرین تغییر: <bdi>@DateText(d.UpdatedUtc)</bdi></p>
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_settings" Title="تنظیم یادآوری پیامکی" Error="@Error" Busy="@Busy" OnSave="SaveSms" Lead="درگاه را تیم استقرار به فهرست مجاز اضافه می‌کند. کلید پس از ذخیره بازخوانی یا نمایش داده نمی‌شود.">
+    @if (_sms is { } sms)
+    {
+        <p class="lms-pill">@(sms.Configured ? "پیکربندی شده (نه تأیید تحویل)" : "پیکربندی نشده؛ اعلان داخلی برقرار است")</p>
+        <label class="lms-inline"><input type="checkbox" @bind="_enabled" /> ارسال پیامکی فعال باشد</label>
+        <label>درگاه<select @bind="_provider"><option value="">انتخاب</option>
+            @foreach (var p in sms.Providers) { <option value="@p">@p</option> }
+        </select></label>
+        <label>کلید جدید<input type="password" dir="ltr" autocomplete="new-password" @bind="_key" /></label>
+    }
+</LmsDialog>
+
+@code {
+    private static readonly string[] Outcomes = ["success", "failed", "denied", "invalid", "conflict", "locked-out", "challenge-issued", "request-accepted", "rate-limited", "rejected"];
+    private bool _uploads = true, _more, _detail, _settings, _enabled;
+    private string _name = "", _min = "", _max = "", _status = "", _outcome = "", _actor = "", _tracking = "", _provider = "", _key = "";
+    private string? _from, _to;
+    private int _page = 1;
+    private DateTimeOffset? _stableTo;
+    private UploadStatusRow[] _uploadRows = [];
+    private SecurityRow[] _securityRows = [];
+    private UploadStatusRow? _selected;
+    private SmsView? _sms;
+    protected override Task OnInitializedAsync() => Search();
+    private Task ShowUploads() => Switch(true);
+    private Task ShowSecurity() => Switch(false);
+    private Task Switch(bool uploads) => Run(async () => { _uploads = uploads; _name = ""; await Load(1); });
+    private Task Search() => Run(() => Load(1));
+    private Task Prev() => Run(() => Load(Math.Max(1, _page - 1)));
+    private Task Next() => Run(() => Load(_page + 1));
+    private async Task Load(int page)
+    {
+        if (page == 1) _stableTo = DateOrNull(_to) ?? DateTimeOffset.UtcNow;
+        var f = new LogFilter(DateOrNull(_from), _stableTo, _name, _uploads ? Number(_min) : null, _uploads ? Number(_max) : null,
+            _uploads && Enum.TryParse<UploadState>(_status, out var s) ? s : null, _uploads ? ParseId(_tracking) : null, page, ParseId(_actor), _outcome);
+        if (_uploads)
+        {
+            var result = await Post<LogPage<UploadStatusRow>>("logs/uploads", f);
+            _uploadRows = result.Rows; _more = result.HasMore;
+        }
+        else
+        {
+            var result = await Post<LogPage<SecurityRow>>("logs/security", f);
+            _securityRows = result.Rows; _more = result.HasMore;
+        }
+        _page = page;
+    }
+    private static long? Number(string value) => string.IsNullOrWhiteSpace(value) ? null : long.TryParse(ReusableAccess.Domain.Identity.IdentityRules.NormalizeDigits(value), out var n) && n >= 0
+        ? n : throw new ArgumentException("حجم باید عدد صحیح نامنفی باشد.");
+    private static Guid? ParseId(string value) => string.IsNullOrWhiteSpace(value) ? null : Guid.TryParse(value, out var id) ? id : throw new ArgumentException("قالب شناسه معتبر نیست.");
+    private void Details(UploadStatusRow row) { _selected = row; _detail = true; }
+    private Task OpenSms() => Run(async () => { var sms = await Get<SmsView>("sms"); _sms = sms; _enabled = sms.Configured; _provider = sms.Selected ?? ""; _key = ""; _settings = true; });
+    private Task SaveSms() => Run(async () => { _ = await Post<bool>("sms", new SmsEdit(_provider, _key, _enabled)); _key = ""; _settings = false; }, "تنظیم پیامک ثبت شد.");
+}
