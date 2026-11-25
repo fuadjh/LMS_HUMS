@@ -95,6 +95,6 @@
     private Task OpenNotices() => Run(async () => { await LoadNotices(); _noticesOpen = true; });
     private async Task LoadNotices() => _notices = await Get<NoticeRow[]>("notices");
     private Task Mark(Guid id) => Run(async () => { _ = await Post<bool>($"notices/{id:D}/read"); await LoadNotices(); }, "اعلان خوانده شد.");
-    private static string Kind(string k) => k switch { "session" => "بازشدن جلسه", "due" => "موعد تکلیف", "cutoff" => "پایان ارسال دیرهنگام", "add-drop" => "پایان حذف‌واضافه", _ => k };
+    private static string Kind(string k) => k switch { "session" => "بازشدن جلسه", "chapter-open" => "بازشدن فصل", "assessment-open" => "بازشدن ارزیابی", "due" => "موعد ارزیابی", "cutoff" => "پایان ارسال دیرهنگام", "add-drop" => "پایان حذف‌واضافه", _ => k };
     private static string Sms(string s) => s switch { "GatewayAccepted" => "درگاه پذیرفت", "GatewayRejected" => "درگاه رد کرد", "NotConfigured" => "پیکربندی نشده", "UnverifiedPhone" => "موبایل تأیید نشده", "Unknown" => "نامعلوم", "KeyUnavailable" => "کلید در دسترس نیست", "Missed" => "مهلت گذشته", _ => "در انتظار" };
 }

@@ -42,6 +42,24 @@ public static class AcademicRules
 
     public static bool CanReadLesson(DateTimeOffset now, DateTimeOffset? chapterPublished, DateTimeOffset? sessionOpens)
         => chapterPublished is not null && sessionOpens is not null && sessionOpens.Value <= now;
+
+    public static DateTimeOffset? Later(DateTimeOffset? first, DateTimeOffset? second)
+        => first is null ? second : second is null || first.Value >= second.Value ? first : second;
+
+    public static bool Inside(DateTimeOffset now, DateTimeOffset? begin, DateTimeOffset? end)
+        => (begin is null || now >= begin.Value) && (end is null || now < end.Value);
+
+    public static bool CanReadChapter(DateTimeOffset now, Chapter chapter)
+        => chapter.Active && chapter.PublishedUtc is not null && Inside(now, chapter.VisibleFromUtc, chapter.VisibleUntilUtc);
+
+    public static bool CanReadLesson(DateTimeOffset now, Chapter chapter, Lesson lesson, LessonSession? session)
+        => lesson.Active && lesson.ChapterId == chapter.Id && session is { Active: true } && session.OfferingId == chapter.OfferingId &&
+           CanReadChapter(now, chapter) && session.OpensUtc <= now && Inside(now, lesson.VisibleFromUtc, lesson.VisibleUntilUtc);
+
+    // Closing a lesson does not close its linked assessment. The containing chapter still gates access.
+    public static bool CanReadAssessment(DateTimeOffset now, Chapter chapter, Assessment assessment)
+        => assessment.Active && assessment.ChapterId == chapter.Id && CanReadChapter(now, chapter) && Inside(now, assessment.OpensUtc, null);
+
 }
 
 public static class JalaliTime
@@ -68,6 +86,14 @@ public static class JalaliTime
     public static bool TryParse(string? value, out DateTimeOffset utc)
     {
         utc = default;
+        if (!TryParseLocal(value, out var local)) return false;
+        try { utc = FromDate(local); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
+    public static bool TryParseLocal(string? value, out DateTime local)
+    {
+        local = default;
         if (string.IsNullOrWhiteSpace(value)) return false;
         var pieces = IdentityRules.NormalizeDigits(value).Split(['/', ' ', ':'], StringSplitOptions.RemoveEmptyEntries);
         if (pieces.Length is not (3 or 5)) return false;
@@ -77,8 +103,7 @@ public static class JalaliTime
         if (n[0] is < 1300 or > 1600) return false;
         try
         {
-            var local = new PersianCalendar().ToDateTime(n[0], n[1], n[2], n.Length == 5 ? n[3] : 0, n.Length == 5 ? n[4] : 0, 0, 0);
-            utc = FromDate(local);
+            local = new PersianCalendar().ToDateTime(n[0], n[1], n[2], n.Length == 5 ? n[3] : 0, n.Length == 5 ? n[4] : 0, 0, 0);
             return true;
         }
         catch (ArgumentException) { return false; }

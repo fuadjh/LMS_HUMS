@@ -1,4 +1,5 @@
-﻿@page "/console/settings"
+@using ReusableAccess.Domain.Academics
+@page "/console/settings"
 @attribute [Authorize(Policy = "ConsoleAdmin")]
 @inherits ConsolePageBase
 @inject NavigationManager Navigation
@@ -19,19 +20,12 @@
             </label>
 
             <p class="muted">
-                زمان‌ها میلادی و UTC هستند؛ شروع شامل و پایان خارج از بازه است.
+                روزها شمسی و ساعت‌ها به وقت UTC هستند؛ شروع شامل و پایان خارج از بازه است.
             </p>
 
             <div class="ra-grid2">
-                <label>
-                    شروع بازه UTC
-                    <InputText type="datetime-local" @bind-Value="_start" />
-                </label>
-
-                <label>
-                    پایان بازه UTC
-                    <InputText type="datetime-local" @bind-Value="_end" />
-                </label>
+                <PersianDateField Label="شروع بازه (UTC)" UtcClock="true" @bind-Value="_start" Disabled="@Busy" />
+                <PersianDateField Label="پایان بازه (UTC)" UtcClock="true" @bind-Value="_end" Disabled="@Busy" />
             </div>
         </section>
 
@@ -89,7 +83,7 @@
 
 @code {
     private AuthSettingsInput? _policy;
-    private string _start = "", _end = "";
+    private string? _start, _end;
     private bool _email, _sms;
     private LoginMode _original;
 
@@ -104,32 +98,23 @@
         _email = view.EmailConfigured;
         _sms = view.SmsConfigured;
 
-        _start = _policy.RegistrationStartsUtc?.UtcDateTime
-            .ToString("yyyy-MM-ddTHH:mm") ?? "";
-
-        _end = _policy.RegistrationEndsUtc?.UtcDateTime
-            .ToString("yyyy-MM-ddTHH:mm") ?? "";
+        _start = PersianUtc(_policy.RegistrationStartsUtc);
+        _end = PersianUtc(_policy.RegistrationEndsUtc);
     }
 
-    private static DateTimeOffset? Utc(string value)
+    private static string? PersianUtc(DateTimeOffset? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
+        if (value is not { } timestamp) return null;
+        var date = timestamp.UtcDateTime;
+        var calendar = new System.Globalization.PersianCalendar();
+        return FormattableString.Invariant($"{calendar.GetYear(date):0000}/{calendar.GetMonth(date):00}/{calendar.GetDayOfMonth(date):00} {date:HH:mm}");
+    }
 
-        if (!DateTime.TryParseExact(
-                value,
-                "yyyy-MM-ddTHH:mm",
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.AssumeUniversal |
-                System.Globalization.DateTimeStyles.AdjustToUniversal,
-                out var date))
-        {
-            throw new ConsoleApiException(400, "تاریخ معتبر نیست.");
-        }
-
-        return new DateTimeOffset(date);
+    private static DateTimeOffset? Utc(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (!JalaliTime.TryParseLocal(value, out var date)) throw new ConsoleApiException(400, "تاریخ شمسی/ساعت UTC معتبر نیست.");
+        return new DateTimeOffset(DateTime.SpecifyKind(date, DateTimeKind.Utc));
     }
 
     private Task Save() => Run(async () =>

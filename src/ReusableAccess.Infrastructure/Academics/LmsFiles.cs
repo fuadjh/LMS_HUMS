@@ -39,11 +39,16 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
         if (!File.Exists(path)) throw LmsError.Missing();
         return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous);
     }
-    internal static long Limit(MediaPurpose purpose) => purpose == MediaPurpose.RosterExcel ? UploadLimits.RosterBytes : UploadLimits.FileBytes;
+    internal static long Limit(MediaPurpose purpose) => purpose switch
+    {
+        MediaPurpose.RosterExcel => UploadLimits.RosterBytes,
+        MediaPurpose.TemplateCover => UploadLimits.CoverBytes,
+        _ => UploadLimits.FileBytes
+    };
     internal static bool Allowed(MediaPurpose purpose, string ext) => purpose switch
     {
-        MediaPurpose.InstructorAvatar or MediaPurpose.StudentAvatar => ext is ".jpg" or ".jpeg" or ".png",
-        MediaPurpose.LessonMaterial => ext is ".mp4" or ".pdf" or ".docx" or ".jpg" or ".jpeg" or ".png" or ".xlsx",
+        MediaPurpose.InstructorAvatar or MediaPurpose.StudentAvatar or MediaPurpose.TemplateCover => ext is ".jpg" or ".jpeg" or ".png",
+        MediaPurpose.LessonMaterial or MediaPurpose.TemplateMaterial => ext is ".mp4" or ".pdf" or ".docx" or ".jpg" or ".jpeg" or ".png" or ".xlsx",
         MediaPurpose.Submission => ext is ".pdf" or ".docx" or ".jpg" or ".jpeg" or ".png" or ".mp4" or ".xlsx",
         MediaPurpose.RosterExcel => ext == ".xlsx", _ => false
     };
@@ -97,6 +102,18 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
                 if (!l.Info.Offering.Active || !l.Chapter.Active || !l.Lesson.Active) throw LmsError.Conflict("درسک یا ارائه غیرفعال است.");
                 if (await data.Read<LessonFile>().CountAsync(x => x.LessonId == targetId, ct) >= 16)
                     throw LmsError.Conflict("حداکثر ۱۶ فایل برای یک درسک.");
+                break;
+            case MediaPurpose.TemplateMaterial:
+            case MediaPurpose.TemplateCover:
+                await access.AsTeacher(LmsPermissions.Template, ct);
+                await access.AsTeacher(LmsPermissions.LessonUpload, ct);
+                var owner = access.ActorId;
+                if (!await data.Read<CourseTemplate>().AnyAsync(t => t.Id == targetId && t.OwnerId == owner && t.Active, ct))
+                    throw LmsError.Missing();
+                var since = data.Now.AddDays(-1);
+                if (await data.Read<Media>().CountAsync(f => f.OwnerId == owner && f.TargetId == targetId && f.CreatedUtc >= since &&
+                    (f.Purpose == MediaPurpose.TemplateMaterial || f.Purpose == MediaPurpose.TemplateCover), ct) >= 64)
+                    throw LmsError.Conflict("سقف ارسال روزانهٔ فایل برای این قالب تکمیل شده است.");
                 break;
             case MediaPurpose.Submission:
                 var i = await grading.Find(targetId, ct);
@@ -175,7 +192,9 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
             errorCode = "received-length";
             if (received != attempt.ReportedBytes) throw LmsError.Invalid("حجم واقعی و اعلامی یکسان نیست.");
             errorCode = "signature";
-            if (!ValidSignature(temp, attempt.Extension)) throw LmsError.Invalid("ساختار فایل با نوع مجاز سازگار نیست.");
+            if (!ValidSignature(temp, attempt.Extension) ||
+                (attempt.Purpose == MediaPurpose.TemplateCover && !CoverDimensions.Valid(temp, attempt.Extension)))
+                throw LmsError.Invalid("ساختار فایل یا ابعاد کاور با نوع مجاز سازگار نیست.");
             errorCode = "commit-unconfirmed";
             // Re-check the resource after streaming (it could have closed/deactivated since registration).
             data.Db.ChangeTracker.Clear();
@@ -191,7 +210,10 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
             {
                 case MediaPurpose.InstructorAvatar: (await data.Find<InstructorProfile>(owner, ct)).AvatarId = media.Id; break;
                 case MediaPurpose.StudentAvatar: (await data.Find<StudentProfile>(owner, ct)).AvatarId = media.Id; break;
-                case MediaPurpose.LessonMaterial: data.Db.Add(new LessonFile { LessonId = media.TargetId, MediaId = media.Id }); break;
+                case MediaPurpose.LessonMaterial:
+                    var last = await data.Read<LessonFile>().Where(l => l.LessonId == media.TargetId).MaxAsync(l => l.Position, ct);
+                    data.Db.Add(new LessonFile { LessonId = media.TargetId, MediaId = media.Id, Position = (last ?? 0) + 1 });
+                    break;
             }
             tracking.UpdatedUtc = data.Now; tracking.State = UploadState.Stored; tracking.ReceivedBytes = received; tracking.Code = null;
             // Move once before committing DB references; an ambiguous crash can leave an orphan, not a false success.
@@ -250,8 +272,23 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
                 break;
             }
             case MediaPurpose.LessonMaterial:
+            case MediaPurpose.TemplateMaterial:
+            case MediaPurpose.TemplateCover:
             {
-                var links = await data.Read<LessonFile>().Where(x => x.MediaId == id).Select(x => x.LessonId).ToArrayAsync(ct);
+                if (access.HasTeacher(LmsPermissions.Template))
+                {
+                    var owned = data.Read<CourseTemplate>().Where(t => t.Active && t.OwnerId == user);
+                    var ownsStaged = (m.Purpose is MediaPurpose.TemplateMaterial or MediaPurpose.TemplateCover) && m.OwnerId == user &&
+                                     await owned.AnyAsync(t => t.Id == m.TargetId, ct);
+                    var ownsVersion = await (from l in data.Read<TemplateVersionMedia>()
+                                             join v in data.Read<TemplateVersion>() on l.TemplateVersionId equals v.Id
+                                             join t in owned on v.TemplateId equals t.Id
+                                             where l.MediaId == id select l.MediaId).AnyAsync(ct);
+                    if (ownsStaged || ownsVersion) break;
+                }
+                var links = m.Purpose == MediaPurpose.TemplateCover
+                    ? await data.Read<Lesson>().Where(l => l.CoverMediaId == id).Select(l => l.Id).ToArrayAsync(ct)
+                    : await data.Read<LessonFile>().Where(x => x.MediaId == id).Select(x => x.LessonId).ToArrayAsync(ct);
                 var allowed = false; var now = data.Now;
                 foreach (var lid in links)
                 {

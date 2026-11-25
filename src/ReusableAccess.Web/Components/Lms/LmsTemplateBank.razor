@@ -1,0 +1,121 @@
+@page "/lms/templates"
+@attribute [Authorize]
+@inherits LmsPage
+@inject NavigationManager Navigation
+
+<PageTitle>بانک الگوهای من</PageTitle>
+<div class="lms lms-teacher">
+    <header class="lms-head">
+        <h1>بانک الگوهای من</h1>
+        <p>فصل و درسک را مستقل از تقویم ترم تهیه کنید. نسخه‌های ذخیره‌شده و سابقهٔ ارائه بازنویسی نمی‌شوند.</p>
+        <a href="/lms" style="color:white">میز استاد</a>
+    </header>
+    @if (Error is not null && !_create && !_archive) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_bank is { } bank)
+    {
+        <div class="lms-card lms-row">
+            <label>عنوان الگو یا درس<input @bind="_search" maxlength="80" /></label>
+            <MudButton OnClick="Search" Disabled="@Busy">جست‌وجو</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenCreate" Disabled="@Busy">ساخت الگوی مستقل</MudButton>
+        </div>
+        @if (Target is not null)
+        {
+            <p class="lms-muted">برای زمان‌بندی ارائه‌ای که از آن آمدید، الگوی همان درس کاتالوگ را انتخاب کنید.</p>
+        }
+        @if (!bank.ScheduleEnabled)
+        {
+            <p class="lms-muted">بانک فعال است؛ کارگاه زمان‌بندی هنوز در تنظیمات این محیط فعال نشده است.</p>
+        }
+        <div class="lms-grid">
+            @foreach (var row in bank.Rows)
+            {
+                <article class="lms-card" @key="row.Id">
+                    <div class="lms-row"><span class="lms-pill">الگوی خصوصی</span><span>@row.Course</span></div>
+                    <h2>@row.Title</h2>
+                    <p class="lms-plain">@row.Description</p>
+                    <p class="lms-muted">@Counts(row) · آخرین تغییر: <bdi>@DateText(row.UpdatedUtc)</bdi></p>
+                    <div class="lms-row">
+                        <MudButton Href="@($"/lms/templates/{row.Id:D}")" Variant="Variant.Outlined">محتوا و نسخه‌ها</MudButton>
+                        @if (bank.ScheduleEnabled && row.LatestVersion is { } version && (Course is null || Course == row.CourseId))
+                        {
+                            <MudButton Href="@Workshop(row.Id, version)" Variant="Variant.Filled" Color="Color.Primary">آماده‌سازی ارائه</MudButton>
+                        }
+                        <MudButton OnClick="() => AskArchive(row)" Disabled="@Busy" Color="Color.Error">بایگانی</MudButton>
+                    </div>
+                </article>
+            }
+        </div>
+        @if (bank.Rows.Length == 0) { <p>الگویی مطابق فیلتر موجود نیست.</p> }
+        <div class="lms-row">
+            <MudButton Disabled="@(Busy || _page <= 1)" OnClick="Previous">صفحهٔ قبل</MudButton>
+            <span>صفحهٔ @Fa(_page)</span>
+            <MudButton Disabled="@(Busy || !bank.HasMore)" OnClick="Next">صفحهٔ بعد</MudButton>
+        </div>
+    }
+</div>
+
+<AppFormModal TModel="CreateModel" @bind-Visible="_create" Model="@_input" Title="ساخت الگو" Error="@Error" Busy="@Busy" OnValidSave="Create">
+    <ChildContent Context="form">
+        <div class="lms lms-teacher">
+            <LmsChoice Label="درس کاتالوگ" Options="@_courses" @bind-Value="form.CourseId" Disabled="@Busy" />
+            <label>عنوان الگو<InputText @bind-Value="form.Title" maxlength="180" /></label>
+            <label>توضیح کوتاه<InputTextArea @bind-Value="form.Description" maxlength="180" /></label>
+            <p class="lms-muted">این کار هیچ ارائه، ثبت‌نام یا تاریخ رسمی ایجاد نمی‌کند.</p>
+        </div>
+    </ChildContent>
+</AppFormModal>
+<AppConfirmDialog @bind-Visible="_archive" Title="بایگانی نرمِ الگو" Busy="@Busy" OnConfirm="Archive" ConfirmText="بایگانی الگو"
+                  Message="فقط الگو از بانک فعال خارج می‌شود. نسخه‌ها، فایل‌ها و ارائه‌های پیشین پاک نمی‌شوند." />
+
+@code {
+    [SupplyParameterFromQuery(Name = "target")] public Guid? Target { get; set; }
+    [SupplyParameterFromQuery(Name = "course")] public Guid? Course { get; set; }
+    private StudioBank? _bank;
+    private CatalogRow[] _courses = [];
+    private string _search = "";
+    private int _page = 1;
+    private bool _create, _archive;
+    private StudioTemplateCard? _selected;
+    private CreateModel _input = new();
+
+    protected override Task OnInitializedAsync() => Run(Load);
+    private async Task Load() => _bank = await Get<StudioBank>($"template-bank?page={_page}&search={Q(_search)}");
+    private Task Search() { _page = 1; return Run(Load); }
+    private Task Previous() { _page--; return Run(Load); }
+    private Task Next() { _page++; return Run(Load); }
+    private Task OpenCreate() => Run(async () =>
+    {
+        _courses = await Get<CatalogRow[]>("template-bank/courses");
+        _input = new() { CourseId = _courses.Any(x => x.Id == Course) ? Course : null };
+        _create = true;
+    });
+    private Task Create(CreateModel form) => Run(async () =>
+    {
+        if (form.CourseId is not { } course) throw new ArgumentException("درس کاتالوگ را انتخاب کنید.");
+        var id = await Post<Guid>("template-bank", new StudioCreateTemplate(course, form.Title, form.Description));
+        _create = false;
+        Navigation.NavigateTo($"/lms/templates/{id:D}");
+    });
+    private void AskArchive(StudioTemplateCard row) { _selected = row; _archive = true; }
+    private Task Archive() => Run(async () =>
+    {
+        if (_selected is not { } row) return;
+        _ = await Post<bool>($"template-bank/{row.Id:D}/archive", new StudioRevision(row.Revision));
+        _archive = false;
+        _page = 1;
+        await Load();
+    }, "الگو بایگانی شد.");
+    private string Workshop(Guid template, Guid version) => $"/lms/templates/{template:D}/schedule/{version:D}" +
+        (Target is { } id ? $"?target={id:D}" : "");
+    private static string Counts(StudioTemplateCard row) => row.ChapterCount is { } c && row.LessonCount is { } l
+        ? $"{Fa(c)} فصل · {Fa(l)} درسک" : row.LatestVersion.HasValue ? "نسخهٔ میراث" : "بدون نسخه";
+
+    private sealed class CreateModel
+    {
+        [Required] public Guid? CourseId { get; set; }
+        [Required(ErrorMessage = "عنوان الگو الزامی است.")]
+        [StringLength(180)] public string Title { get; set; } = "";
+        [StringLength(180)] public string? Description { get; set; }
+    }
+}

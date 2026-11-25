@@ -4,7 +4,7 @@ namespace ReusableAccess.Domain.Academics;
 public enum TermSeason { Mehr = 1, Bahman = 2, Summer = 3 }
 public enum OfferingAudience { General = 1, Common = 2, Specialized = 3 }
 public enum EnrollmentStatus { Active = 1, WithdrawnByStudent = 2, RemovedByAdmin = 3 }
-public enum MediaPurpose { InstructorAvatar = 1, StudentAvatar = 2, LessonMaterial = 3, Submission = 4, RosterExcel = 5 }
+public enum MediaPurpose { InstructorAvatar = 1, StudentAvatar = 2, LessonMaterial = 3, Submission = 4, RosterExcel = 5, TemplateMaterial = 6, TemplateCover = 7 }
 public enum UploadState { Pending = 1, Receiving = 2, Stored = 3, Rejected = 4, Interrupted = 5, Incomplete = 6 }
 
 public sealed class Faculty
@@ -148,6 +148,9 @@ public sealed class CourseTemplate
     public Guid CourseId { get; set; }
     public string Title { get; set; } = string.Empty;
     public bool Active { get; set; }
+    public string? Description { get; set; }
+    public DateTimeOffset? UpdatedUtc { get; set; }
+    public Guid Revision { get; set; } = Guid.NewGuid();
 }
 
 public sealed class TemplateVersion
@@ -157,6 +160,8 @@ public sealed class TemplateVersion
     public int Number { get; set; }
     public DateTimeOffset CreatedUtc { get; set; }
     public string Snapshot { get; set; } = string.Empty;
+    public int? ChapterCount { get; set; }
+    public int? LessonCount { get; set; }
 }
 
 public sealed class Chapter
@@ -167,6 +172,9 @@ public sealed class Chapter
     public int Position { get; set; }
     public DateTimeOffset? PublishedUtc { get; set; }
     public bool Active { get; set; }
+    public Guid? TemplateItemKey { get; set; }
+    public DateTimeOffset? VisibleFromUtc { get; set; }
+    public DateTimeOffset? VisibleUntilUtc { get; set; }
 }
 
 public sealed class LessonSession
@@ -187,6 +195,11 @@ public sealed class Lesson
     public string Body { get; set; } = string.Empty;
     public int Position { get; set; }
     public bool Active { get; set; }
+    public Guid? TemplateItemKey { get; set; }
+    public DateTimeOffset? VisibleFromUtc { get; set; }
+    public DateTimeOffset? VisibleUntilUtc { get; set; }
+    public string? Summary { get; set; }
+    public Guid? CoverMediaId { get; set; }
 }
 
 public sealed class LessonFile
@@ -194,6 +207,7 @@ public sealed class LessonFile
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid LessonId { get; set; }
     public Guid MediaId { get; set; }
+    public int? Position { get; set; }
 }
 
 public sealed class Assessment
@@ -209,6 +223,9 @@ public sealed class Assessment
     public decimal MaxScore { get; set; }
     public string? QuizSpec { get; set; }
     public bool Active { get; set; }
+    public Guid? TemplateItemKey { get; set; }
+    public Guid? LessonId { get; set; }
+    public DateTimeOffset? OpensUtc { get; set; }
 }
 
 public sealed class Enrollment

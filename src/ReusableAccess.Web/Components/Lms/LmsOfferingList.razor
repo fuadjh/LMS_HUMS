@@ -26,9 +26,11 @@
                     @if (!row.Active) { <span class="lms-pill">بایگانی</span> }
                 </div>
                 <h2>@row.Course</h2><p>گروه @Fa(row.Group) · @Fa(row.Term)</p><p class="lms-muted">استاد مسئول: @row.Lead</p>
-                @if (View != "student") { <p class="lms-muted">نمایش: <bdi>@DateText(row.VisibleUtc)</bdi> · @(row.PublishedUtc.HasValue ? "منتشرشده" : "پیش‌نویس")</p> }
+                @if (View != "student") { <p class="lms-muted">نمایش: <bdi>@DateText(row.VisibleUtc)</bdi> · @(row.PublishedUtc is null ? "منتشر نشده" : row.VisibleUtc is null || row.VisibleUtc > DateTimeOffset.UtcNow ? "منتشرشده؛ در انتظار نمایش" : "قابل مشاهده")</p> }
                 <div class="lms-row">
                     <MudButton Variant="Variant.Outlined" Href="@($"/lms/offer/{row.Id:D}/{View}")">مشاهدهٔ ارائه</MudButton>
+                    @if (View == "teacher")
+                    { <MudButton Href="@($"/lms/offer/{row.Id:D}/schedule-view")">تقویم واقعی</MudButton> }
                     @if (View == "admin" && !row.Closed) { <MudButton OnClick="() => Start(row)">واگذاری یا بایگانی</MudButton> }
                 </div>
             </article>

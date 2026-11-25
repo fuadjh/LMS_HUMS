@@ -1,0 +1,80 @@
+<section aria-labelledby="studio-dates-title">
+    <div class="lms-row">
+        <h2 id="studio-dates-title">بازبینی تقویم</h2>
+        <label>فیلتر ردیف‌ها
+            <select @bind="_filter">
+                <option value="all">همه</option><option value="content">محتوا</option>
+                <option value="assessment">ارزیابی</option><option value="issues">خطاها</option>
+            </select>
+        </label>
+        <span class="lms-pill @(Preview.Issues.Length == 0 ? "lms-ok" : "lms-bad")" role="status">@LmsPage.Fa(Preview.Issues.Length) خطا</span>
+    </div>
+    @foreach (var issue in Preview.Issues.Where(x => x.Key == null))
+    {
+        <p class="lms-pill lms-bad" role="alert">@issue.Message</p>
+    }
+    <div class="schedule-grid" role="region" aria-label="زمان‌بندی قابل بازبینی">
+        @foreach (var row in Filtered)
+        {
+            <article class="lms-card schedule-row" @key="row.Item.Key">
+                <div class="schedule-title">
+                    <span class="lms-pill">@Kind(row.Item.Kind)</span>
+                    <h3>@row.Item.Title</h3>
+                    @if (row.Item.ChapterKey is { } key)
+                    {
+                        <span class="lms-muted">@(Preview.Rows.FirstOrDefault(r => r.Item.Key == key)?.Item.Title)</span>
+                    }
+                </div>
+                @Cell(row, ScheduleField.Start, row.Start)
+                @if (row.Due is { } due) { @Cell(row, ScheduleField.Due, due) }
+                @if (row.End is { } end) { @Cell(row, ScheduleField.End, end) }
+            </article>
+        }
+    </div>
+    @if (!Filtered.Any()) { <p class="lms-muted">ردیفی برای این فیلتر باقی نمانده است.</p> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public StudioSchedulePreview Preview { get; set; } = default!;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<(ScheduleRow Row, ScheduleField Field)> Edit { get; set; }
+    private string _filter = "all";
+    private IEnumerable<ScheduleRow> Filtered => Preview.Rows.Where(row => _filter switch
+    {
+        "content" => row.Item.Kind != ScheduleKind.Assessment,
+        "assessment" => row.Item.Kind == ScheduleKind.Assessment,
+        "issues" => Preview.Issues.Any(x => x.Key == row.Item.Key),
+        _ => true
+    });
+
+    private RenderFragment Cell(ScheduleRow row, ScheduleField field, ScheduleDate value) => @<div class="schedule-cell">
+        <small>@Field(row.Item.Kind, field)</small>
+        <bdi>@LmsPage.DateText(value.AtUtc)</bdi>
+        <span class="lms-muted">@Source(value.Source)</span>
+        @if (value.Source == ScheduleDateSource.Manual && value.SuggestedUtc != value.AtUtc)
+        {
+            <small>پیشنهاد: <bdi>@LmsPage.DateText(value.SuggestedUtc)</bdi></small>
+        }
+        @foreach (var issue in Preview.Issues.Where(x => x.Key == row.Item.Key && x.Field == field))
+        {
+            <small class="lms-pill lms-bad">@issue.Message</small>
+        }
+        <MudButton Disabled="@Disabled" OnClick="() => Edit.InvokeAsync((row, field))" aria-label="@($"تغییر {Field(row.Item.Kind, field)} · {row.Item.Title}")">تغییر</MudButton>
+    </div>;
+
+    internal static string Kind(ScheduleKind kind) => kind switch
+    {
+        ScheduleKind.Visibility => "نمایش ارائه", ScheduleKind.Chapter => "فصل", ScheduleKind.Lesson => "درسک", _ => "ارزیابی"
+    };
+    internal static string Field(ScheduleKind kind, ScheduleField field) => field switch
+    {
+        ScheduleField.Start => "شروع", ScheduleField.Due => "موعد عادی",
+        ScheduleField.End when kind == ScheduleKind.Assessment => "مهلت نهایی (خالی = موعد عادی)", _ => "پایان نمایش (غیرشامل)"
+    };
+    private static string Source(ScheduleDateSource source) => source switch
+    {
+        ScheduleDateSource.Relative => "پیشنهاد نسبی", ScheduleDateSource.Previous => "منتقل‌شده از مبدأ",
+        ScheduleDateSource.Manual => "دستی", ScheduleDateSource.Policy => "از تقویم رسمی",
+        ScheduleDateSource.Existing => "زمان فعلی ارائه", _ => "بدون پیشنهاد"
+    };
+}

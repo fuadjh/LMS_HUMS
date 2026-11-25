@@ -98,7 +98,7 @@ internal sealed class LmsEnrollments(LmsData data, LmsAccess access, LmsOffering
         return new(l, c, s, i);
     }
     internal static bool PublishedLesson(LessonInfo info, DateTimeOffset now) => info.Info.Offering.Active && info.Lesson.Active && info.Chapter.Active &&
-        AcademicRules.CanSee(now, info.Info.Offering.PublishedUtc, info.Info.Offering.VisibleUtc) && AcademicRules.CanReadLesson(now, info.Chapter.PublishedUtc, info.Session?.OpensUtc);
+        AcademicRules.CanSee(now, info.Info.Offering.PublishedUtc, info.Info.Offering.VisibleUtc) && AcademicRules.CanReadLesson(now, info.Chapter, info.Lesson, info.Session);
     public async Task<bool> ProgressAsync(Guid lessonId, CancellationToken ct)
     {
         await using var tx = await data.Transaction(ct);

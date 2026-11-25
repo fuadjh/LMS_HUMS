@@ -1,0 +1,46 @@
+@typeparam TModel where TModel : class
+
+<AppModal Visible="@Visible" VisibleChanged="VisibleChanged" Busy="@Locked" Title="@Title" Width="@Width" Error="@Error">
+    <ChildContent>
+        <EditForm @key="Model" Model="@Model" FormName="@_formName" OnValidSubmit="Submit">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset class="ra-form-fields" disabled="@Locked">
+                @(ChildContent?.Invoke(Model))
+            </fieldset>
+            <div class="ra-dialog-footer">
+                <MudButton ButtonType="ButtonType.Button" Disabled="@Locked" OnClick="Cancel">انصراف</MudButton>
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !CanSave)">
+                    @if (Locked) { <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="me-2" /> }
+                    @SaveText
+                </MudButton>
+            </div>
+        </EditForm>
+    </ChildContent>
+</AppModal>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter, EditorRequired] public TModel Model { get; set; } = default!;
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string SaveText { get; set; } = "ذخیره";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool CanSave { get; set; } = true;
+    [Parameter] public MaxWidth Width { get; set; } = MaxWidth.Small;
+    [Parameter] public RenderFragment<TModel>? ChildContent { get; set; }
+    [Parameter] public EventCallback<TModel> OnValidSave { get; set; }
+    private readonly string _formName = $"ra-editor-{Guid.NewGuid():N}";
+    private bool _submitting;
+    private bool Locked => Busy || _submitting;
+
+    private Task Cancel() => Locked ? Task.CompletedTask : VisibleChanged.InvokeAsync(false);
+    private async Task Submit()
+    {
+        if (Locked || !CanSave || !OnValidSave.HasDelegate) return;
+        _submitting = true;
+        try { await OnValidSave.InvokeAsync(Model); }
+        finally { _submitting = false; }
+    }
+}

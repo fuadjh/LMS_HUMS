@@ -18,7 +18,7 @@ using ReusableAccess.Infrastructure.Persistence;
 
 namespace ReusableAccess.Infrastructure.Tests.Academics;
 
-public sealed class LmsPersistenceTests
+public sealed partial class LmsPersistenceTests
 {
     private const string Baseline = "20261103062810_CompleteAdminIdentity";
     private const string AddLms = "20261121203400_AddUniversityLms";
@@ -33,6 +33,7 @@ public sealed class LmsPersistenceTests
         options.UseSqlServer(noConnect).UseOpenIddict<Guid>();
         using var db = new ApplicationDbContext(options.Options);
         Assert.Contains(AddLms, db.Database.GetMigrations());
+        Assert.Contains("20261125090000_AddLmsStudio", db.Database.GetMigrations());
         Assert.False(db.Database.HasPendingModelChanges());
         foreach (var type in db.Model.GetEntityTypes().Where(t => t.GetSchema() == "lms"))
         foreach (var fk in type.GetForeignKeys()) Assert.Equal(DeleteBehavior.NoAction, fk.DeleteBehavior);

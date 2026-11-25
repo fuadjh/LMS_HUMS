@@ -1,0 +1,5 @@
+.ra-date-field { min-inline-size: 0; }
+.date-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
+.date-actions input { max-inline-size: 16em; flex: 1 1 9em; }
+.ra-date-panel { overflow-x: auto; padding: .25rem; }
+.ra-date-panel ::deep .picker-pack { float: none; margin: 0; }

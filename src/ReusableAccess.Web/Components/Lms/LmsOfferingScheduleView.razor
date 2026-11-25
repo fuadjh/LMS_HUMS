@@ -1,0 +1,45 @@
+@page "/lms/offer/{Id:guid}/schedule-view"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>تقویم واقعی ارائه</PageTitle>
+<div class="lms lms-teacher">
+    <header class="lms-head">
+        <h1>تقویم واقعی ارائه</h1>
+        <p>فقط‌خواندنی؛ دادهٔ اعمال‌شده، نه پیشنهادهای کارگاه.</p>
+        <a href="@($"/lms/offer/{Id:D}/teacher")" style="color:white">بازگشت به ارائه</a>
+    </header>
+    @if (Error is not null) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_schedule is { } schedule)
+    {
+        <div class="lms-card">
+            <h2>@schedule.Course</h2>
+            <p>آغاز کلاس: <bdi>@(schedule.ClassesStartDate is { } day ? LmsScheduleStudio.LocalText(day) : "ثبت نشده")</bdi></p>
+            <p>زمان نمایش ارائه: <bdi>@DateText(schedule.VisibleUtc)</bdi></p>
+            <p>تاریخ انتشار: <bdi>@DateText(schedule.PublishedUtc)</bdi></p>
+        </div>
+        <div class="lms-grid">
+            @foreach (var row in schedule.Rows)
+            {
+                <article class="lms-card" @key="row.Key">
+                    <span class="lms-pill">@LmsScheduleGrid.Kind(row.Kind)</span>
+                    <h3>@row.Title</h3>
+                    <p>شروع: <bdi>@DateText(row.Times.Start)</bdi></p>
+                    @if (row.Kind == ScheduleKind.Assessment) { <p>موعد عادی: <bdi>@DateText(row.Times.Due)</bdi></p> }
+                    <p>@LmsScheduleGrid.Field(row.Kind, ScheduleField.End): <bdi>@DateText(row.Times.End)</bdi></p>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private StudioReadSchedule? _schedule;
+    protected override Task OnParametersSetAsync() => Run(async () =>
+    {
+        _schedule = null;
+        _schedule = await Get<StudioReadSchedule>($"offerings/{Id:D}/schedule-view");
+    });
+}

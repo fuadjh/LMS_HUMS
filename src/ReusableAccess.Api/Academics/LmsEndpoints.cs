@@ -92,6 +92,7 @@ public static class LmsEndpoints
             .RequireAuthorization("PlatformAdmin").WithName("lms.sms.read");
         r.MapPost("/sms", (SmsEdit input, ISender s, CancellationToken ct) => Send(s, new SaveLmsSmsSettingsCommand(input), ct))
             .RequireAuthorization("PlatformAdmin").WithName("lms.sms.write");
+        r.MapLmsStudio();
         return app;
     }
 }

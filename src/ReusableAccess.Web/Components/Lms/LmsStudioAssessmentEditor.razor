@@ -1,0 +1,52 @@
+<div class="lms-card">
+    <div class="lms-row"><span class="lms-pill">@(Model.IsQuiz ? "آزمون چهارگزینه‌ای" : "تکلیف")</span>
+        <MudButton OnClick="() => Remove.InvokeAsync()" Disabled="@Disabled" Color="Color.Error">برداشتن از نسخهٔ تازه</MudButton>
+    </div>
+    <fieldset disabled="@Disabled" class="ra-form-fields" @oninput="() => Changed.InvokeAsync()">
+        <div class="lms-grid">
+            <label>عنوان<input @bind="Model.Title" maxlength="180" /></label>
+            <LmsChoice Label="درسک مرتبط" Options="@Lessons" Value="@Model.LessonKey" ValueChanged="SelectLesson" EmptyText="ارزیابی مستقل فصل" />
+            <label>تعداد تلاش<input type="number" min="1" max="20" @bind="Model.MaxAttempts" /></label>
+            <label>سقف نمره<input type="number" min="0.01" max="1000" step="0.01" @bind="Model.MaxScore" /></label>
+            <label>روز شروع (خالی: روز درسک یا فصل)<input type="number" min="0" max="730" @bind="Model.StartDay" /></label>
+            <label>روز موعد عادی<input type="number" min="0" max="730" @bind="Model.DueDay" /></label>
+            <label>روز مهلت نهایی (اختیاری)<input type="number" min="0" max="730" @bind="Model.EndDay" /></label>
+        </div>
+        <label>@(Model.IsQuiz ? "دستور آزمون" : "صورت تکلیف")<textarea @bind="Model.Prompt" maxlength="16000"></textarea></label>
+        <label>راهنما یا معیار تصحیح<textarea @bind="Model.Rubric" maxlength="8000"></textarea></label>
+        @if (Model.IsQuiz)
+        {
+            @foreach (var question in Model.Questions)
+            {
+                <details class="lms-card my-2" @key="question">
+                    <summary>@(string.IsNullOrWhiteSpace(question.Prompt) ? "سؤال تازه" : question.Prompt)</summary>
+                    <label>صورت سؤال<textarea @bind="question.Prompt" maxlength="1000"></textarea></label>
+                    @for (var i = 0; i < 4; i++)
+                    {
+                        var at = i;
+                        <label>گزینهٔ @(i + 1)<input @bind="question.Choices[at]" maxlength="500" /></label>
+                    }
+                    <label>گزینهٔ صحیح
+                        <select @bind="question.Correct">
+                            <option value="">انتخاب کنید</option>
+                            <option value="0">۱</option><option value="1">۲</option><option value="2">۳</option><option value="3">۴</option>
+                        </select>
+                    </label>
+                    <MudButton OnClick="() => Drop(question)">حذف سؤال</MudButton>
+                </details>
+            }
+            <MudButton OnClick="Add" Disabled="@(Disabled || Model.Questions.Count >= 30)">افزودن سؤال</MudButton>
+        }
+    </fieldset>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StudioAssessmentForm Model { get; set; } = default!;
+    [Parameter, EditorRequired] public CatalogRow[] Lessons { get; set; } = [];
+    [Parameter] public EventCallback Remove { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    private Task SelectLesson(Guid? id) { Model.LessonKey = id; return Changed.InvokeAsync(); }
+    private Task Add() { Model.Questions.Add(StudioQuestionForm.Fresh()); return Changed.InvokeAsync(); }
+    private Task Drop(StudioQuestionForm question) { Model.Questions.Remove(question); return Changed.InvokeAsync(); }
+}

@@ -1,28 +1,13 @@
-﻿@using MudBlazor
-<MudDialog Visible="@Visible"
-VisibleChanged="VisibleChanged"
-           Options="@Options"
-           Class="ra-modal"
-           AriaLabel="@Title">
-    <TitleContent>
-        <MudText Typo="Typo.h6">@Title</MudText>
-    </TitleContent>
-    <DialogContent>
-        <MudAlert Severity="Severity.Warning" Variant="Variant.Text">
-            @Message
-        </MudAlert>
-    </DialogContent>
-    <DialogActions>
-        <MudButton Disabled="@Busy"
-                   OnClick="() => VisibleChanged.InvokeAsync(false)">
-            انصراف
-        </MudButton>
-        <MudButton Color="Color.Error" Variant="Variant.Filled"
-                   Disabled="@Busy" OnClick="OnConfirm">
-            تأیید عملیات
-        </MudButton>
-    </DialogActions>
-</MudDialog>
+@using MudBlazor
+<AppModal Visible="@Visible" VisibleChanged="VisibleChanged" Title="@Title" Busy="@(Busy || _confirming)">
+    <ChildContent>
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Text">@Message</MudAlert>
+    </ChildContent>
+    <Actions>
+        <MudButton Disabled="@(Busy || _confirming)" OnClick="Cancel">انصراف</MudButton>
+        <MudButton Color="@ConfirmColor" Variant="Variant.Filled" Disabled="@(Busy || _confirming)" OnClick="Confirm">@ConfirmText</MudButton>
+    </Actions>
+</AppModal>
 
 @code {
     [Parameter] public bool Visible { get; set; }
@@ -32,10 +17,15 @@ VisibleChanged="VisibleChanged"
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback OnConfirm { get; set; }
 
-    private static readonly DialogOptions Options = new()
+    [Parameter] public string ConfirmText { get; set; } = "تأیید عملیات";
+    [Parameter] public Color ConfirmColor { get; set; } = Color.Error;
+    private bool _confirming;
+    private Task Cancel() => Busy || _confirming ? Task.CompletedTask : VisibleChanged.InvokeAsync(false);
+    private async Task Confirm()
     {
-        FullWidth = true, MaxWidth = MaxWidth.Small,
-        BackdropClick = false, CloseOnEscapeKey = false,
-        CloseButton = false, CloseOnNavigation = true
-    };
+        if (Busy || _confirming || !OnConfirm.HasDelegate) return;
+        _confirming = true;
+        try { await OnConfirm.InvokeAsync(); }
+        finally { _confirming = false; }
+    }
 }

@@ -9,8 +9,8 @@
         <div class="lms-row"><MudButton OnClick="ShowUploads">ارسال فایل</MudButton><MudButton OnClick="ShowSecurity">رویدادهای امنیتی</MudButton><MudButton OnClick="OpenSms">تنظیم پیامک</MudButton></div>
         <h2>@(_uploads ? "جستجوی ارسال‌ها" : "جستجوی امنیت")</h2>
         <div class="lms-grid">
-            <label>از تاریخ/ساعت <input class="lms-date" @bind="_from" placeholder="۱۴۰۵/۰۹/۰۱" /></label>
-            <label>تا تاریخ/ساعت (غیرشامل) <input class="lms-date" @bind="_to" placeholder="۱۴۰۵/۰۹/۳۰" /></label>
+            <PersianDateField Label="از تاریخ/ساعت" @bind-Value="_from" Disabled="@Busy" />
+            <PersianDateField Label="تا تاریخ/ساعت (غیرشامل)" @bind-Value="_to" Disabled="@Busy" />
             <label>@(_uploads ? "نام فایل" : "نوع عمل")<input @bind="_name" maxlength="100" /></label>
             <label>شناسهٔ کاربر<input dir="ltr" @bind="_actor" /></label>
             @if (_uploads)

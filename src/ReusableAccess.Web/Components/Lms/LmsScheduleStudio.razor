@@ -1,0 +1,106 @@
+@page "/lms/templates/{TemplateId:guid}/schedule/{VersionId:guid}"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>کارگاه زمان‌بندی ارائه</PageTitle>
+<div class="lms lms-teacher">
+    <header class="lms-head">
+        <h1>کارگاه زمان‌بندی ارائه</h1>
+        <p>فقط برای ارائهٔ فعال و خالی که آموزش قبلاً به شما واگذار کرده است.</p>
+        <a href="@($"/lms/templates/{TemplateId:D}")" style="color:white">بازگشت به الگو</a>
+    </header>
+    @if (Error is not null && !_adjust) { <div role="alert"><MudAlert Severity="Severity.Error">@Error</MudAlert></div> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_enabled && _version is not null)
+    {
+        <nav class="lms-row" aria-label="مرحله‌های کارگاه">
+            <span class="lms-pill" aria-current="@(_step == 1 ? "step" : null)">۱. ارائه</span>
+            <span class="lms-pill" aria-current="@(_step == 2 ? "step" : null)">۲. روش و مبنا</span>
+            <span class="lms-pill" aria-current="@(_step == 3 ? "step" : null)">۳. بازبینی</span>
+        </nav>
+        @if (_step == 1)
+        {
+            <section class="lms-card">
+                <h2>انتخاب مقصد</h2>
+                <LmsChoice Label="نیم‌سال (فیلتر)" Options="@_terms" @bind-Value="_termFilter" EmptyText="همهٔ نیم‌سال‌ها" Disabled="@Busy" />
+                <MudButton OnClick="ReloadTargets" Disabled="@Busy">اعمال فیلتر</MudButton>
+                <LmsChoice Label="ارائهٔ واگذارشده" Options="@Available" @bind-Value="_targetId" Disabled="@Busy" />
+                @if (_targets.All(t => !t.CanPrepare)) { <p>ارائهٔ مناسبی نیست. برای ساخت یا واگذاری گروه با آموزش هماهنگ کنید.</p> }
+                <MudButton OnClick="Choose" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Busy || _targetId is null)">ادامه</MudButton>
+            </section>
+        }
+        else if (_target is { } target)
+        {
+            <section class="lms-card">
+                <div class="lms-row"><span class="lms-pill">@target.Course</span><span>@TermLabel(target.Year, target.Season) · گروه @Fa(target.Group)</span></div>
+                <p>مخاطب: @Audience(target.Audience) · @(target.CohortIds.Length == 0 ? "همهٔ ورودی‌های واجد شرایط" : $"{Fa(target.CohortIds.Length)} ورودیِ مشخص")</p>
+                <p class="lms-muted">@Fa(target.EligibleStudents) واجد شرایطِ فعلی · @Fa(target.ActiveEnrollments) اخذ فعال. مخاطب و مهلت رسمی اینجا تغییر نمی‌کنند.</p>
+            </section>
+            @if (_differentPlan)
+            {
+                <MudAlert Severity="Severity.Warning">برای این ارائه پیش‌نویس نسخهٔ دیگری ثبت شده است. آن را صریحاً دور بریزید یا همان نسخه را از بانک باز کنید.</MudAlert>
+            }
+            @if (_step == 2)
+            {
+                <section class="lms-card my-2">
+                    <h2>تاریخ مبنا و روش تولید</h2>
+                    <PersianDateField Label="روز آغاز کلاس" DayOnly="true" Value="@_start" ValueChanged="ChangeStart" Disabled="@Busy" />
+                    <label>روش
+                        <select value="@_mode" @onchange="ChangeMode" disabled="@Busy">
+                            <option value="Relative">افست روزهای الگو</option>
+                            <option value="Shift" disabled="@(_sources.Length == 0)">انتقال از ارائهٔ قبلی</option>
+                        </select>
+                    </label>
+                    @if (_mode == ScheduleMode.Shift)
+                    {
+                        <LmsChoice Label="ارائهٔ مبدأ" Options="@Origins" Value="@_origin" ValueChanged="ChangeOrigin" Disabled="@Busy" />
+                    }
+                    else if (_sources.Length == 0)
+                    {
+                        <p class="lms-muted">ارائهٔ پیشینِ همین الگو با شناسه و روز مبنای معتبر وجود ندارد. دادهٔ قدیمی با عنوان تطبیق داده نمی‌شود.</p>
+                    }
+                    <p class="lms-muted">شروعِ روز ۰۸:۰۰ تهران؛ «تا پایان روز» یعنی ساعت ۰۰:۰۰ روز بعد. شروع نمایش و مهلت اخذ، مستقل از آغاز کلاس‌اند.</p>
+                </section>
+            }
+            @if (_step == 3 && _preview is { } preview)
+            {
+                @if (_changed)
+                {
+                    <p class="lms-pill lms-warn" role="status">جدول برای تنظیم قبلی است؛ برای ثبت، دوباره پیش‌نمایش بگیرید.</p>
+                }
+                <LmsScheduleGrid Preview="@preview" Disabled="@(Busy || _differentPlan)" Edit="EditField" />
+                <p class="lms-muted">@Fa(_overrides.Count) تاریخ دستی. تغییر روش یا روز مبنا دستی‌ها را نگه می‌دارد. برای تعطیلی به تقویم رسمی دانشگاه رجوع کنید؛ فهرست تأییدشدهٔ تعطیلات در برنامه تنظیم نشده است.</p>
+            }
+            <div class="lms-row">
+                <MudButton OnClick="Back" Disabled="@Busy">گام قبل</MudButton>
+                <MudButton OnClick="Preview" Variant="Variant.Outlined" Disabled="@(Busy || _differentPlan)">@(_step == 2 ? "ساخت پیش‌نمایش" : "محاسبهٔ دوباره")</MudButton>
+                @if (_draft?.State == ScheduleDraftState.Draft)
+                {
+                    <MudButton OnClick="AskDiscard" Color="Color.Error" Disabled="@Busy">دور ریختن پیش‌نویس</MudButton>
+                }
+                @if (_step == 3)
+                {
+                    <MudButton OnClick="AskReset" Disabled="@(Busy || _overrides.Count == 0 || _differentPlan)">حذف همهٔ اصلاحات دستی</MudButton>
+                    <MudButton OnClick="Save" Disabled="@(Busy || _changed || _preview is null || _differentPlan)">ذخیرهٔ پیش‌نویس</MudButton>
+                    <MudButton OnClick="() => AskApply(false)" Disabled="@(Busy || !Ready)">اعمال بدون انتشار</MudButton>
+                    <MudButton OnClick="() => AskApply(true)" Disabled="@(Busy || !Ready || !target.CanPublish)" Variant="Variant.Filled" Color="Color.Primary">اعمال و انتشار</MudButton>
+                }
+            </div>
+            @if (_status is not null) { <p role="status">@_status</p> }
+        }
+    }
+</div>
+
+@if (_field is { } change)
+{
+    <LmsDialog @bind-Visible="_adjust" Title="@(LmsScheduleGrid.Field(change.Row.Item.Kind, change.Field))" Lead="@change.Row.Item.Title" OnSave="SetDate" Error="@Error"
+               Busy="@Busy" SaveText="نگه داشتن تاریخ دستی">
+        <PersianDateField Label="تاریخ/ساعت تهران" @bind-Value="_dateToEdit" PreferredTime="@(change.Field == ScheduleField.Start ? AcademicSchedule.ClassStartTime : TimeOnly.MinValue)" />
+        <p class="lms-muted">اگر فقط روز بنویسید، برای شروع ساعت ۰۸:۰۰ و برای موعد/پایان ساعت ۰۰:۰۰ روز بعد اعمال می‌شود.</p>
+        <div class="lms-row">
+            <MudButton OnClick="Inherit">بازگشت به پیشنهاد</MudButton>
+            @if (change.Field == ScheduleField.End) { <MudButton OnClick="ClearDate">پاک‌کردن پایان اختیاری</MudButton> }
+        </div>
+    </LmsDialog>
+}
+<AppConfirmDialog @bind-Visible="_confirm" Busy="@Busy" Title="@_confirmTitle" Message="@_confirmMessage" OnConfirm="Confirm" />

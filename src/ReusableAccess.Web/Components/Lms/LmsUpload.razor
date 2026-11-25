@@ -31,11 +31,16 @@
     private string? _note;
     private bool _busy;
     private Guid? _reported;
-    private long Limit => Purpose == MediaPurpose.RosterExcel ? UploadLimits.RosterBytes : UploadLimits.FileBytes;
+    private long Limit => Purpose switch
+    {
+        MediaPurpose.RosterExcel => UploadLimits.RosterBytes,
+        MediaPurpose.TemplateCover => UploadLimits.CoverBytes,
+        _ => UploadLimits.FileBytes
+    };
     private string Accept => Purpose switch
     {
         MediaPurpose.RosterExcel => ".xlsx",
-        MediaPurpose.StudentAvatar or MediaPurpose.InstructorAvatar => ".jpg,.jpeg,.png",
+        MediaPurpose.StudentAvatar or MediaPurpose.InstructorAvatar or MediaPurpose.TemplateCover => ".jpg,.jpeg,.png",
         _ => ".mp4,.pdf,.docx,.jpg,.jpeg,.png,.xlsx"
     };
     private async Task ReadInfo(ChangeEventArgs _)

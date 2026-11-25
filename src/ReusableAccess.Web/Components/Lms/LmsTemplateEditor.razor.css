@@ -1,0 +1,2 @@
+summary { cursor: pointer; padding-block: .35rem; overflow-wrap: anywhere; }
+.studio-cover { max-inline-size: min(100%, 10rem); max-block-size: 6rem; border-radius: .6rem; object-fit: cover; }

@@ -22,7 +22,7 @@
                 @if (!o.Active) { <span class="lms-pill">بایگانی‌شده</span> }
             </div>
             @if (View == "preview") { <p>پیش‌نمایش: زمان‌بندی و وضعیت انتشار رعایت می‌شود و هیچ فعالیت آموزشی ثبت نمی‌شود.</p> }
-            @if (View is "teacher" or "admin") { <p class="lms-muted">نمایش از: <bdi>@DateText(o.VisibleUtc)</bdi> · @(o.PublishedUtc.HasValue ? "منتشرشده" : "پیش‌نویس")</p> }
+            @if (View is "teacher" or "admin") { <p class="lms-muted">نمایش از: <bdi>@DateText(o.VisibleUtc)</bdi> · @Publication(o)</p> }
             @if (View == "student") { <p class="lms-muted">پایان حذف‌واضافه: <bdi>@DateText(o.DropClosesUtc)</bdi></p> }
             <div class="lms-row">
                 @if (o.CanEnroll) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="AskJoin">اخذ درس</MudButton> }
@@ -39,6 +39,12 @@
                 @if (View == "teacher")
                 {
                     <MudButton Href="@($"/lms/offer/{Id:D}/preview")">پیش‌نمایش دانشجو</MudButton>
+                    <MudButton Href="@($"/lms/offer/{Id:D}/schedule-view")">تقویم واقعی و سابقه</MudButton>
+                    @if (dd.TeacherEditor && _home?.ScheduleStudioEnabled == true && Can(LmsPermissions.Template) &&
+                         dd.Chapters.Length == 0 && dd.Sessions.Length == 0 && o.PublishedUtc == null)
+                    {
+                        <MudButton Variant="Variant.Outlined" Href="@($"/lms/templates?course={o.CourseId:D}&target={Id:D}")">تنظیم تقویم از بانک الگو</MudButton>
+                    }
                     @if (dd.Lead && Can(LmsPermissions.Template)) { <MudButton OnClick="Templates">قالب خصوصی</MudButton> }
                 }
             </div>
@@ -63,20 +69,39 @@
                             @if (View == "teacher") { <span class="lms-pill">@(c.PublishedUtc.HasValue ? "منتشرشده" : c.Active ? "پیش‌نویس" : "بایگانی")</span> }
                         </div>
                         <h2>@c.Title</h2>
+                        @if (c.OpensUtc.HasValue || c.ClosesUtc.HasValue)
+                        {
+                            <p class="lms-muted">نمایش فصل: <bdi>@DateText(c.OpensUtc)</bdi> تا <bdi>@DateText(c.ClosesUtc)</bdi></p>
+                        }
                         @foreach (var lesson in c.Lessons)
                         {
-                            <div class="lms-row"><span>@lesson.Title</span>
+                            <div class="lms-row" @key="lesson.Id">
+                                @if (lesson.CoverMediaId is { } cover)
+                                { <img src="@FileUrl(cover)" alt="کاور ویدئوی درسک" width="64" height="48" loading="lazy" style="object-fit:cover;border-radius:.4rem" /> }
+                                <span>@lesson.Title</span>
                                 @if (lesson.Completed) { <span class="lms-pill lms-ok">تکمیل شده</span> }
-                                @if (!lesson.CanRead) { <small class="lms-muted">بازشدن: <bdi>@DateText(lesson.OpensUtc)</bdi></small> }
-                                else { <MudButton OnClick="() => ShowLesson(c, lesson)">بازکردن درسک</MudButton> }
+                                @if (!lesson.CanRead && lesson.ClosesUtc is { } close && close <= DateTimeOffset.UtcNow)
+                                { <small class="lms-muted">دسترسی پایان یافته است.</small> }
+                                else if (!lesson.CanRead) { <small class="lms-muted">هنوز در دسترس نیست · <bdi>@DateText(lesson.OpensUtc)</bdi></small> }
+                                else
+                                {
+                                    <MudButton OnClick="() => ShowLesson(c, lesson)">بازکردن درسک</MudButton>
+                                    @if (lesson.ClosesUtc is { } until) { <small class="lms-muted">پایان دسترسی: <bdi>@DateText(until)</bdi></small> }
+                                }
                                 @if (dd.TeacherEditor && c.PublishedUtc is null) { <MudButton OnClick="() => EditLesson(c, lesson)">ویرایش</MudButton> }
                             </div>
+                            @if (!string.IsNullOrWhiteSpace(lesson.Summary)) { <p class="lms-muted">@lesson.Summary</p> }
                         }
                         @foreach (var assignment in c.Assessments)
                         {
-                            <div class="lms-row"><span>@(assignment.Quiz is null ? "تکلیف" : "آزمون چهارگزینه‌ای"): @assignment.Title</span>
+                            <div class="lms-row" @key="assignment.Id"><span>@(assignment.IsQuiz ? "آزمون چهارگزینه‌ای" : "تکلیف"): @assignment.Title</span>
+                                @if (assignment.LessonId is { } id)
+                                { <small class="lms-muted">@((c.Lessons.FirstOrDefault(x => x.Id == id))?.Title)</small> }
                                 <small class="lms-muted">موعد <bdi>@DateText(assignment.DueUtc)</bdi></small>
-                                <MudButton OnClick="() => ShowWork(assignment)">@(View == "teacher" ? "صورت تکلیف و تصحیح" : "مشاهدهٔ تکلیف")</MudButton>
+                                @if (!assignment.CanRead && assignment.OpensUtc > DateTimeOffset.UtcNow)
+                                { <small class="lms-muted">بازشدن: <bdi>@DateText(assignment.OpensUtc)</bdi></small> }
+                                @if (assignment.CanRead || View != "preview")
+                                { <MudButton OnClick="() => ShowWork(assignment)">@(View == "teacher" ? "صورت و تصحیح" : assignment.CanRead ? "مشاهدهٔ ارزیابی" : "سابقهٔ ارزیابی")</MudButton> }
                                 @if (dd.TeacherEditor && c.PublishedUtc is null) { <MudButton OnClick="() => EditAssessment(c, assignment)">ویرایش</MudButton> }
                             </div>
                         }
@@ -105,18 +130,18 @@
 </LmsDialog>
 <LmsDialog @bind-Visible="_editor" Title="@_editTitle" Busy="@Busy" Error="@Error" OnSave="SaveEdit" Lead="زمان‌ها جلالی و به وقت تهران‌اند. فصل منتشرشده برای حفظ سوابق فقط خواندنی است.">
     <div class="lms-grid">
-        @if (_kind == "schedule") { <label>زمان دیده‌شدن ارائه<input class="lms-date" @bind="_time" placeholder="۱۴۰۵/۰۹/۰۱ ۰۸:۰۰" /></label> }
+        @if (_kind == "schedule") { <PersianDateField Label="زمان دیده‌شدن ارائه" @bind-Value="_time" Disabled="@Busy" /> }
         else
         {
             <label>عنوان<input @bind="_title" maxlength="180" /></label>
             @if (_kind is "chapter" or "lesson") { <label>ترتیب<input type="number" min="1" max="1000" @bind="_position" /></label> }
-            @if (_kind == "session") { <label>زمان بازشدن جلسه<input class="lms-date" @bind="_time" placeholder="۱۴۰۵/۰۹/۰۱ ۰۸:۰۰" /></label> }
+            @if (_kind == "session") { <PersianDateField Label="زمان بازشدن جلسه" @bind-Value="_time" Disabled="@Busy" /> }
             @if (_kind == "lesson") { <LmsChoice Label="جلسهٔ بازشدن درسک" Options="@SessionChoices" @bind-Value="_session" EmptyText="زمان‌بندی نشده" /> }
             @if (_kind == "assessment")
             {
                 <label>نوع ارزیابی<select @bind="_isQuiz"><option value="false">تکلیف متنی یا فایل</option><option value="true">آزمون چهارگزینه‌ای</option></select></label>
-                <label>موعد عادی<input class="lms-date" @bind="_due" placeholder="۱۴۰۵/۰۹/۱۵ ۲۰:۰۰" /></label>
-                <label>مهلت نهایی (اختیاری)<input class="lms-date" @bind="_cutoff" placeholder="۱۴۰۵/۰۹/۱۷ ۲۰:۰۰" /></label>
+                <PersianDateField Label="موعد عادی" @bind-Value="_due" Disabled="@Busy" />
+                <PersianDateField Label="مهلت نهایی (اختیاری)" @bind-Value="_cutoff" Disabled="@Busy" />
                 <label>حداکثر تلاش<input type="number" min="1" max="20" @bind="_attempts" /></label>
                 <label>سقف نمره<input type="number" min="0.01" max="1000" step="0.01" @bind="_maxScore" /></label>
             }
@@ -146,10 +171,11 @@
 <LmsDialog @bind-Visible="_lessonOpen" Title="@(_lesson?.Title ?? "درسک")" Error="@Error" Busy="@Busy">
     @if (_lesson is { } l)
     {
+        @if (!string.IsNullOrWhiteSpace(l.Summary)) { <p class="lms-muted">@l.Summary</p> }
         <p class="lms-plain">@l.Body</p>
         @foreach (var f in l.Files)
         {
-            @if (f.Extension == ".mp4") { <video controls preload="metadata" src="@FileUrl(f.Id)" style="display:block;width:100%;max-height:50vh"></video> }
+            @if (f.Extension == ".mp4") { <video controls preload="metadata" src="@FileUrl(f.Id)" poster="@(l.CoverMediaId is { } posterId ? FileUrl(posterId) : null)" style="display:block;width:100%;max-height:50vh"></video> }
             <p><a class="lms-file" href="@FileUrl(f.Id)" target="_blank" rel="noopener">@f.Name · @Size(f.Bytes)</a></p>
         }
         @if (View == "teacher" && _details?.TeacherEditor == true && _chapter?.PublishedUtc is null && Can(LmsPermissions.LessonUpload))
@@ -200,6 +226,7 @@
 <LmsDialog @bind-Visible="_workOpen" Title="@(_assessment?.Title ?? "تکلیف")" Error="@Error" Busy="@Busy">
     @if (_assessment is { } a)
     {
+        @if (!a.CanRead) { <p class="lms-muted">صورت یا فرم ارزیابی در حال حاضر در دسترس نیست؛ سوابق مجاز حفظ می‌شوند.</p> }
         <p class="lms-plain">@a.Prompt</p>
         @if (!string.IsNullOrWhiteSpace(a.Rubric)) { <details><summary>معیار تصحیح</summary><p class="lms-plain">@a.Rubric</p></details> }
         <p class="lms-muted">موعد عادی <bdi>@DateText(a.DueUtc)</bdi> · مهلت نهایی <bdi>@DateText(a.CutoffUtc)</bdi> · @Fa(a.MaxAttempts) تلاش · از @Fa(a.MaxScore)</p>
@@ -304,7 +331,7 @@
     private readonly List<FileRow> _pendingFiles = [];
     private bool Can(string permission) => _home?.Permissions.Contains(permission) == true;
     private bool MaySubmit => View == "student" && Can(LmsPermissions.Submit) && _details?.ReadOnly == false &&
-        _assessment is { CutoffUtc: { } cutoff } a && DateTimeOffset.UtcNow < cutoff && _work.Length < a.MaxAttempts;
+        _assessment is { CanRead: true, CutoffUtc: { } cutoff } a && DateTimeOffset.UtcNow < cutoff && _work.Length < a.MaxAttempts;
     protected override Task OnParametersSetAsync() => Run(async () =>
     {
         _details = null; _confirm = _editor = _lessonOpen = _rosterOpen = _workOpen = _gradeOpen = _templates = _teachers = false;
@@ -312,6 +339,8 @@
         _home = await Get<LmsHome>("me"); await Load();
     });
     private async Task Load() => _details = await Get<OfferingDetails>($"{Root}?view={View}");
+    private static string Publication(OfferingRow o) => !o.Active ? "بایگانی" : o.Closed ? "پایان‌یافته" :
+        o.PublishedUtc is null ? "منتشر نشده" : o.VisibleUtc is null || o.VisibleUtc > DateTimeOffset.UtcNow ? "منتشرشده؛ در انتظار نمایش" : "قابل مشاهده";
     private static string FileUrl(Guid id) => $"/bff/lms/files/{id:D}";
     private void Ask(string title, string impact, Func<Task> action, bool reason = false)
     { _confirmTitle = title; _confirmImpact = impact; _reasonNeeded = reason; _reason = ""; _saveConfirmed = action; _confirm = true; }

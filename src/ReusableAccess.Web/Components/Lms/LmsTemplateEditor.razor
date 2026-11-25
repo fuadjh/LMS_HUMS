@@ -1,0 +1,248 @@
+@page "/lms/templates/{TemplateId:guid}"
+@attribute [Authorize]
+@inherits LmsPage
+@inject NavigationManager Navigation
+
+<PageTitle>ویرایش الگو</PageTitle>
+<NavigationLock ConfirmExternalNavigation="@_dirty" OnBeforeInternalNavigation="BeforeNavigate" />
+<div class="lms lms-teacher" @oninput="MarkDirty">
+    <header class="lms-head">
+        <h1>ویرایش الگوی خصوصی</h1>
+        <p>روز صفر، روز آغاز کلاس در ارائه است. زمان قطعی یا نتیجهٔ دانشجو در الگو ذخیره نمی‌شود.</p>
+        <a href="/lms/templates" style="color:white">بانک الگوها</a>
+    </header>
+    @if (Error is not null) { <div role="alert"><MudAlert Severity="Severity.Error">@Error</MudAlert></div> }
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_model is { } model && _detail is { } detail)
+    {
+        <section class="lms-card">
+            <div class="lms-row">
+                <span class="lms-pill">@detail.Template.Course</span>
+                @if (detail.Format == 1) { <span class="lms-pill lms-warn">نسخهٔ میراث؛ زمان‌های ناشناخته را تنظیم کنید</span> }
+                @if (_dirty) { <span class="lms-pill lms-warn" role="status">تغییر ذخیره‌نشده</span> }
+            </div>
+            <div class="lms-grid">
+                <label>عنوان الگو<input @bind="model.Title" maxlength="180" disabled="@Busy" /></label>
+                <label>توضیح کوتاه<input @bind="model.Description" maxlength="180" disabled="@Busy" /></label>
+            </div>
+            <details>
+                <summary>تاریخچهٔ نسخه‌ها</summary>
+                <div class="lms-row">
+                    <a href="@($"/lms/templates/{TemplateId:D}")">آخرین نسخه</a>
+                    @foreach (var version in _versions.Rows)
+                    {
+                        <a href="@($"/lms/templates/{TemplateId:D}?version={version.Id:D}")">نسخهٔ @Fa(version.Number) (<bdi>@DateText(version.CreatedUtc)</bdi>)</a>
+                    }
+                </div>
+                <MudButton Disabled="@(Busy || _versionPage <= 1)" OnClick="VersionBack">صفحهٔ قبل</MudButton>
+                <MudButton Disabled="@(Busy || !_versions.HasMore)" OnClick="VersionNext">صفحهٔ بعد</MudButton>
+            </details>
+        </section>
+        <div class="lms-row">
+            <MudButton Variant="Variant.Outlined" Disabled="@Busy" OnClick="AddChapter">افزودن فصل</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@Busy" OnClick="Save">ذخیرهٔ نسخهٔ تازه</MudButton>
+        </div>
+        @foreach (var chapter in model.Chapters)
+        {
+            <details class="lms-card my-2" open @key="chapter.Key">
+                <summary><strong>فصل @Fa(model.Chapters.IndexOf(chapter) + 1) · @(string.IsNullOrWhiteSpace(chapter.Title) ? "بدون عنوان" : chapter.Title)</strong></summary>
+                <div class="lms-grid">
+                    <label>عنوان فصل<input @bind="chapter.Title" maxlength="180" disabled="@Busy" /></label>
+                    <label>روز شروع فصل<input type="number" min="0" max="730" @bind="chapter.StartDay" disabled="@Busy" /></label>
+                    <label>تا پایان روز (اختیاری)<input type="number" min="0" max="730" @bind="chapter.EndDay" disabled="@Busy" /></label>
+                </div>
+                <div class="lms-row">
+                    <MudButton OnClick="() => Move(model.Chapters, chapter, -1)" Disabled="@(Busy || model.Chapters.IndexOf(chapter) == 0)">فصل به بالا</MudButton>
+                    <MudButton OnClick="() => Move(model.Chapters, chapter, 1)" Disabled="@(Busy || model.Chapters.IndexOf(chapter) == model.Chapters.Count - 1)">فصل به پایین</MudButton>
+                    <MudButton OnClick="() => RemoveChapter(chapter)" Disabled="@(Busy || chapter.Lessons.Count != 0 || chapter.Assessments.Count != 0)" Color="Color.Error">حذف فصل خالی</MudButton>
+                    <MudButton OnClick="() => AddLesson(chapter)" Disabled="@Busy">افزودن درسک</MudButton>
+                    <MudButton OnClick="() => AddAssessment(chapter, null, false)" Disabled="@Busy">تکلیف مستقل فصل</MudButton>
+                    <MudButton OnClick="() => AddAssessment(chapter, null, true)" Disabled="@Busy">آزمون مستقل فصل</MudButton>
+                </div>
+                @foreach (var lesson in chapter.Lessons)
+                {
+                    <details class="lms-card my-2" @key="lesson.Key">
+                        <summary>@(string.IsNullOrWhiteSpace(lesson.Title) ? "درسک تازه" : lesson.Title) · @Fa(lesson.Files.Count) فایل</summary>
+                        <div class="lms-grid">
+                            <label>عنوان درسک<input @bind="lesson.Title" maxlength="180" disabled="@Busy" /></label>
+                            <label>خلاصه<input @bind="lesson.Summary" maxlength="250" disabled="@Busy" /></label>
+                            <label>روز شروع درسک<input type="number" min="0" max="730" @bind="lesson.StartDay" disabled="@Busy" /></label>
+                            <label>تا پایان روز (اختیاری)<input type="number" min="0" max="730" @bind="lesson.EndDay" disabled="@Busy" /></label>
+                        </div>
+                        <label>متن درسک<textarea @bind="lesson.Body" maxlength="32000" disabled="@Busy"></textarea></label>
+                        <div class="lms-row">
+                            <MudButton OnClick="() => Move(chapter.Lessons, lesson, -1)" Disabled="@(Busy || chapter.Lessons.IndexOf(lesson) == 0)">درسک به بالا</MudButton>
+                            <MudButton OnClick="() => Move(chapter.Lessons, lesson, 1)" Disabled="@(Busy || chapter.Lessons.IndexOf(lesson) == chapter.Lessons.Count - 1)">درسک به پایین</MudButton>
+                            <MudButton OnClick="() => AskRemove(chapter, lesson)" Disabled="@Busy" Color="Color.Error">برداشتن درسک</MudButton>
+                        </div>
+                        <div class="lms-row">
+                            <MudButton OnClick="() => AddAssessment(chapter, lesson, false)" Disabled="@(Busy || HasAssessment(chapter, lesson, false))">تکلیف این درسک</MudButton>
+                            <MudButton OnClick="() => AddAssessment(chapter, lesson, true)" Disabled="@(Busy || HasAssessment(chapter, lesson, true))">آزمون این درسک</MudButton>
+                        </div>
+                        <h3>پیوست‌ها (به ترتیب نمایش)</h3>
+                        @foreach (var fileId in lesson.Files)
+                        {
+                            var file = model.Files.GetValueOrDefault(fileId);
+                            <div class="lms-row" @key="fileId">
+                                @if (file is not null)
+                                {
+                                    <a href="@FileUrl(fileId)"><bdi>@file.Name</bdi></a>
+                                    <span class="lms-muted">@Size(file.Bytes)</span>
+                                }
+                                else { <span class="lms-pill lms-warn">پیوست قدیمی در دسترس نیست</span> }
+                                <MudButton Disabled="@(Busy || lesson.Files.IndexOf(fileId) == 0)" OnClick="() => Move(lesson.Files, fileId, -1)">بالاتر</MudButton>
+                                <MudButton Disabled="@(Busy || lesson.Files.IndexOf(fileId) == lesson.Files.Count - 1)" OnClick="() => Move(lesson.Files, fileId, 1)">پایین‌تر</MudButton>
+                                <MudButton Disabled="@Busy" OnClick="() => RemoveFile(lesson, fileId)">برداشتن</MudButton>
+                            </div>
+                        }
+                        @if (_canUpload && _openUpload == lesson.Key)
+                        {
+                            <LmsUpload TargetId="@TemplateId" Purpose="MediaPurpose.TemplateMaterial" Disabled="@(Busy || lesson.Files.Count >= 16)" Uploaded="file => AddFile(lesson, file, false)" />
+                            @if (HasVideo(lesson))
+                            {
+                                <h4>کاور ویدئو (PNG یا JPEG، حداکثر ۳ MiB)</h4>
+                                <LmsUpload TargetId="@TemplateId" Purpose="MediaPurpose.TemplateCover" Disabled="@Busy" Uploaded="file => AddFile(lesson, file, true)" />
+                            }
+                        }
+                        else if (_canUpload)
+                        {
+                            <MudButton OnClick="() => _openUpload = lesson.Key" Disabled="@Busy">باز کردن ارسال فایل و کاور</MudButton>
+                        }
+                        @if (lesson.Cover is { } cover)
+                        {
+                            <div class="lms-row">
+                                <img src="@FileUrl(cover)" alt="کاور ویدئوی درسک" class="studio-cover" loading="lazy" />
+                                <MudButton OnClick="() => ClearCover(lesson)" Disabled="@Busy">برداشتن کاور</MudButton>
+                            </div>
+                        }
+                    </details>
+                }
+                @if (chapter.Assessments.Count > 0) { <h3>ارزیابی‌های فصل</h3> }
+                @foreach (var assessment in chapter.Assessments)
+                {
+                    <LmsStudioAssessmentEditor @key="assessment.Key" Model="@assessment" Lessons="@LessonChoices(chapter)" Disabled="@Busy"
+                        Remove="() => RemoveAssessment(chapter, assessment)" Changed="MarkDirty" />
+                }
+            </details>
+        }
+        <div class="lms-row">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@Busy" OnClick="Save">ذخیرهٔ نسخهٔ تازه</MudButton>
+            @if (!_dirty && _schedule && detail.VersionId is { } id)
+            {
+                <MudButton Href="@($"/lms/templates/{TemplateId:D}/schedule/{id:D}")">زمان‌بندی همین نسخه</MudButton>
+            }
+        </div>
+    }
+</div>
+<AppConfirmDialog @bind-Visible="_leave" Title="خروج بدون ذخیره" Message="تغییرهای این ویرایش هنوز نسخه نشده‌اند." OnConfirm="Leave" />
+<AppConfirmDialog @bind-Visible="_remove" Title="برداشتن درسک" Message="این درسک و ارزیابی‌های وابسته فقط از نسخهٔ تازه کنار گذاشته می‌شوند."
+                  OnConfirm="RemoveLesson" ConfirmText="برداشتن درسک" />
+
+@code {
+    [Parameter] public Guid TemplateId { get; set; }
+    [SupplyParameterFromQuery(Name = "version")] public Guid? Version { get; set; }
+    private StudioTemplateDetails? _detail;
+    private StudioEditorModel? _model;
+    private StudioVersionList _versions = new([], false);
+    private int _versionPage = 1;
+    private bool _canUpload, _schedule, _dirty, _leave, _remove;
+    private Guid? _openUpload;
+    private string? _nextPage;
+    private StudioChapterForm? _deleteChapter;
+    private StudioLessonForm? _deleteLesson;
+    private string Root => $"template-bank/{TemplateId:D}";
+
+    protected override Task OnParametersSetAsync() => Run(async () =>
+    {
+        _dirty = false;
+        _model = null;
+        _openUpload = null;
+        _versionPage = 1;
+        var home = await Get<LmsHome>("me");
+        _canUpload = home.Teacher && home.Permissions.Contains(LmsPermissions.LessonUpload);
+        _schedule = home.ScheduleStudioEnabled && home.Permissions.Contains(LmsPermissions.Content);
+        await Load(Version);
+    });
+
+    private async Task Load(Guid? version)
+    {
+        var data = await Get<StudioTemplateDetails>(Root + (version is { } key ? $"?versionId={key:D}" : ""));
+        _detail = data;
+        _model = new(data);
+        await LoadVersions();
+    }
+    private async Task LoadVersions() => _versions = await Get<StudioVersionList>($"{Root}/versions?page={_versionPage}");
+    private Task VersionNext() { _versionPage++; return Run(LoadVersions); }
+    private Task VersionBack() { _versionPage--; return Run(LoadVersions); }
+    private async Task Save()
+    {
+        var navigate = false;
+        await Run(async () =>
+        {
+            if (_model is not { } model || _detail is not { } detail) return;
+            var saved = await Post<StudioVersionSaved>($"{Root}/versions", new StudioSaveVersion(detail.Template.Revision, model.Title, model.Description, model.Content()));
+            _dirty = false;
+            await Load(saved.VersionId);
+            navigate = Version.HasValue;
+        }, "نسخهٔ تازه ذخیره شد.");
+        if (navigate) Navigation.NavigateTo($"/lms/templates/{TemplateId:D}", replace: true);
+    }
+
+    private void MarkDirty() => _dirty = true;
+    private void AddChapter() { _model?.Chapters.Add(StudioChapterForm.Fresh()); MarkDirty(); }
+    private void RemoveChapter(StudioChapterForm c)
+    {
+        if (c.Lessons.Count == 0 && c.Assessments.Count == 0) { _model?.Chapters.Remove(c); MarkDirty(); }
+    }
+    private void AddLesson(StudioChapterForm c) { c.Lessons.Add(StudioLessonForm.Fresh(c.StartDay)); MarkDirty(); }
+    private void AskRemove(StudioChapterForm c, StudioLessonForm l) { _deleteChapter = c; _deleteLesson = l; _remove = true; }
+    private void RemoveLesson()
+    {
+        if (_deleteChapter is not { } c || _deleteLesson is not { } l) return;
+        c.Assessments.RemoveAll(a => a.LessonKey == l.Key);
+        c.Lessons.Remove(l);
+        _remove = false;
+        MarkDirty();
+    }
+    private void AddAssessment(StudioChapterForm c, StudioLessonForm? l, bool quiz)
+    {
+        if (l is not null && HasAssessment(c, l, quiz)) return;
+        var a = StudioAssessmentForm.Fresh(l?.Key, quiz);
+        var start = l?.StartDay ?? c.StartDay;
+        if (start is { } day && day + 7 <= (c.EndDay ?? AcademicSchedule.MaxOffsetDays)) a.DueDay = day + 7;
+        c.Assessments.Add(a);
+        MarkDirty();
+    }
+    private static bool HasAssessment(StudioChapterForm c, StudioLessonForm l, bool quiz) => c.Assessments.Any(a => a.LessonKey == l.Key && a.IsQuiz == quiz);
+    private void RemoveAssessment(StudioChapterForm chapter, StudioAssessmentForm assessment) { chapter.Assessments.Remove(assessment); MarkDirty(); }
+    private static CatalogRow[] LessonChoices(StudioChapterForm c) => c.Lessons.Select(l => new CatalogRow(l.Key, l.Title)).ToArray();
+    private bool HasVideo(StudioLessonForm l) => _model is { } m && l.Files.Any(id => m.Files.GetValueOrDefault(id)?.Extension == ".mp4");
+    private void RemoveFile(StudioLessonForm lesson, Guid id) { lesson.Files.Remove(id); if (!HasVideo(lesson)) lesson.Cover = null; MarkDirty(); }
+    private void ClearCover(StudioLessonForm lesson) { lesson.Cover = null; MarkDirty(); }
+    private void AddFile(StudioLessonForm lesson, FileRow file, bool cover)
+    {
+        if (_model is not { } model || !model.Chapters.Any(c => c.Lessons.Contains(lesson))) return;
+        model.Files[file.Id] = file;
+        if (cover && HasVideo(lesson)) lesson.Cover = file.Id;
+        if (!cover && lesson.Files.Count < 16 && !lesson.Files.Contains(file.Id)) lesson.Files.Add(file.Id);
+        MarkDirty();
+    }
+    private void Move<T>(List<T> list, T item, int delta) { StudioEditorModel.Move(list, item, delta); MarkDirty(); }
+    private static string FileUrl(Guid id) => $"/bff/lms/files/{id:D}";
+    private Task BeforeNavigate(LocationChangingContext e)
+    {
+        if (_dirty)
+        {
+            e.PreventNavigation();
+            _nextPage = e.TargetLocation;
+            _leave = true;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+    private void Leave()
+    {
+        _dirty = _leave = false;
+        if (_nextPage is { } url) Navigation.NavigateTo(url);
+    }
+}

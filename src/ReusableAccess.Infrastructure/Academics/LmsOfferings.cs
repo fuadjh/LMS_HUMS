@@ -7,7 +7,7 @@ using ReusableAccess.Infrastructure.Identity;
 
 namespace ReusableAccess.Infrastructure.Academics;
 
-internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILmsOfferings
+internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, StudioTemplates studioTemplates, StudioMaterializer materializer) : ILmsOfferings
 {
     internal IQueryable<OfferingInfo> Infos() => from o in data.Read<Offering>()
         join c in data.Read<CatalogCourse>() on o.CourseId equals c.Id
@@ -101,7 +101,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
         if (view == "student" && own is null && (!visible || closed || !await access.Eligible(info, study, ct))) throw LmsError.Missing();
         var lead = await data.Read<ApplicationUser>().Where(x => x.Id == info.Offering.LeadId).Select(x => x.DisplayName).SingleAsync(ct);
         var targets = await TargetIds(offeringId, ct);
-        var chapters = teacher || (preview && visible) || (visible && own?.Status == EnrollmentStatus.Active && info.Offering.Active && (closed || study?.Record.Id == own.StudyRecordId))
+        var chapters = teacher || (preview && visible && info.Offering.Active) || (visible && own?.Status == EnrollmentStatus.Active && info.Offering.Active && (closed || study?.Record.Id == own.StudyRecordId))
             ? await ChapterRows(offeringId, own, teacher, isLead && teacher, now, ct) : [];
         var sessions = teacher ? await data.Read<LessonSession>().Where(x => x.OfferingId == offeringId).OrderBy(x => x.OpensUtc)
             .Select(x => new SessionRow(x.Id, x.Title, x.OpensUtc, x.Active)).ToArrayAsync(ct) : [];
@@ -126,20 +126,36 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
         var sessions = await data.Read<LessonSession>().Where(x => x.OfferingId == id && (teacher || x.Active)).ToDictionaryAsync(x => x.Id, ct);
         var lessons = await data.Read<Lesson>().Where(x => chapterIds.Contains(x.ChapterId) && (teacher || x.Active)).OrderBy(x => x.Position).ToArrayAsync(ct);
         var lessonIds = lessons.Select(x => x.Id).ToArray();
-        var files = (await (from l in data.Read<LessonFile>() join m in data.Read<Media>() on l.MediaId equals m.Id where lessonIds.Contains(l.LessonId)
-                            select new { l.LessonId, File = new FileRow(m.Id, m.Name, m.Bytes, m.Extension) }).ToArrayAsync(ct)).ToLookup(x => x.LessonId, x => x.File);
-        var done = own is null ? new HashSet<Guid>() : (await data.Read<LessonProgress>().Where(x => x.EnrollmentId == own.Id).Select(x => x.LessonId).ToArrayAsync(ct)).ToHashSet();
-        var assessments = await data.Read<Assessment>().Where(x => chapterIds.Contains(x.ChapterId) && (teacher || x.Active && x.DueUtc != null && x.CutoffUtc != null)).OrderBy(x => x.DueUtc).ToArrayAsync(ct);
+        var files = (await (from l in data.Read<LessonFile>() join m in data.Read<Media>() on l.MediaId equals m.Id
+                            where lessonIds.Contains(l.LessonId)
+                            orderby l.Position == null, l.Position, l.Id
+                            select new { l.LessonId, File = new FileRow(m.Id, m.Name, m.Bytes, m.Extension) }).ToArrayAsync(ct))
+            .ToLookup(x => x.LessonId, x => x.File);
+        var done = own is null ? new HashSet<Guid>() : (await data.Read<LessonProgress>().Where(x => x.EnrollmentId == own.Id)
+            .Select(x => x.LessonId).ToArrayAsync(ct)).ToHashSet();
+        var assessments = await data.Read<Assessment>().Where(x => chapterIds.Contains(x.ChapterId) &&
+            (teacher || x.Active && x.DueUtc != null && x.CutoffUtc != null)).OrderBy(x => x.DueUtc).ThenBy(x => x.Id).ToArrayAsync(ct);
         return chapters.Select(c => new ChapterRow(c.Id, c.Title, c.Position, c.PublishedUtc, c.Active,
             lessons.Where(l => l.ChapterId == c.Id).Select(l =>
             {
-                DateTimeOffset? opens = l.SessionId is { } sid ? sessions.GetValueOrDefault(sid)?.OpensUtc : null;
-                var allowed = teacher || AcademicRules.CanReadLesson(now, c.PublishedUtc, opens);
-                return new LessonRow(l.Id, l.Title, l.Position, l.SessionId, opens, allowed ? l.Body : null, allowed, done.Contains(l.Id), l.Active,
-                    allowed ? files[l.Id].ToArray() : []);
-            }).ToArray(), assessments.Where(a => a.ChapterId == c.Id).Select(a => new AssessmentRow(a.Id, c.Id, a.Title, a.Prompt, a.Rubric,
-                a.DueUtc, a.CutoffUtc, a.MaxAttempts, a.MaxScore, a.Active, QuizRows(a, includeQuizKey))).ToArray())).ToArray();
+                var session = l.SessionId is { } sid ? sessions.GetValueOrDefault(sid) : null;
+                var opens = AcademicRules.Later(c.VisibleFromUtc, AcademicRules.Later(l.VisibleFromUtc, session?.OpensUtc));
+                var allowed = teacher || AcademicRules.CanReadLesson(now, c, l, session);
+                var closes = Earlier(c.VisibleUntilUtc, l.VisibleUntilUtc);
+                return new LessonRow(l.Id, l.Title, l.Position, l.SessionId, opens, allowed ? l.Body : null,
+                    allowed, done.Contains(l.Id), l.Active, allowed ? files[l.Id].ToArray() : [], allowed ? l.Summary : null, closes,
+                    allowed ? l.CoverMediaId : null, teacher ? l.TemplateItemKey : null);
+            }).ToArray(), assessments.Where(a => a.ChapterId == c.Id).Select(a =>
+            {
+                var allowed = teacher || AcademicRules.CanReadAssessment(now, c, a);
+                return new AssessmentRow(a.Id, c.Id, a.Title, allowed ? a.Prompt : null, allowed ? a.Rubric : null, a.DueUtc, a.CutoffUtc,
+                    a.MaxAttempts, a.MaxScore, a.Active, allowed ? QuizRows(a, includeQuizKey) : null, a.LessonId,
+                    AcademicRules.Later(a.OpensUtc, c.VisibleFromUtc), allowed, a.QuizSpec is not null, teacher ? a.TemplateItemKey : null);
+            }).ToArray(), c.VisibleFromUtc, c.VisibleUntilUtc, teacher ? c.TemplateItemKey : null)).ToArray();
     }
+
+    private static DateTimeOffset? Earlier(DateTimeOffset? a, DateTimeOffset? b)
+        => a is null ? b : b is null || a.Value <= b.Value ? a : b;
 
     public async Task<Guid> SaveAsync(OfferingEdit input, CancellationToken ct)
     {
@@ -186,7 +202,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
         return await data.Finish(tx, o.Id, o.Id, ct);
     }
 
-    private async Task ValidateInstructor(Guid id, Guid faculty, Guid? major, bool platform, CancellationToken ct)
+    internal async Task ValidateInstructor(Guid id, Guid faculty, Guid? major, bool platform, CancellationToken ct)
     {
         var candidate = await (from t in data.Read<InstructorProfile>() join m in data.Read<Major>() on t.MajorId equals m.Id
                                join u in data.Read<ApplicationUser>() on t.Id equals u.Id
@@ -246,7 +262,9 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
         if (o.PublishedUtc is null) { o.PublishedUtc = now; o.Revision = Guid.NewGuid(); }
         return await data.Finish(tx, true, o.Id, ct);
     }
-    internal static bool Publishable(Assessment a, Term t) => a.DueUtc is not null && a.CutoffUtc is not null && a.DueUtc <= a.CutoffUtc && a.CutoffUtc <= t.EndsUtc;
+    internal static bool Publishable(Assessment a, Term t) => a.DueUtc is not null && a.CutoffUtc is not null &&
+        a.DueUtc <= a.CutoffUtc && a.CutoffUtc <= t.EndsUtc && (a.OpensUtc is null ||
+        a.OpensUtc >= t.StartsUtc && a.OpensUtc < a.DueUtc);
 
     public async Task<Guid> SaveSectionAsync(Guid offeringId, string kind, SectionEdit input, CancellationToken ct)
     {
@@ -276,6 +294,9 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
                                     where l.SessionId == s.Id && c.PublishedUtc != null && c.Active && l.Active select l.Id).AnyAsync(ct);
                 if (linked && (!input.Active || s.OpensUtc <= data.Now && s.OpensUtc != when))
                     throw LmsError.Conflict("جلسهٔ منتشرشده قابل بایگانی نیست و پس از بازشدن زمان آن ثابت می‌ماند.");
+                var scheduledLesson = await data.Read<Lesson>().AnyAsync(l => l.SessionId == s.Id && l.VisibleFromUtc != null, ct);
+                if (scheduledLesson && (s.OpensUtc != when || !input.Active))
+                    throw LmsError.Conflict("زمان جلسهٔ تولیدشده در کارگاه از این فرم تغییر نمی‌کند.");
                 s.Title = title; s.OpensUtc = when; s.Active = input.Active;
                 if (input.Id is null) data.Db.Add(s);
                 result = s.Id; break;
@@ -284,10 +305,17 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
             {
                 var c = await FindChapter(offeringId, LmsError.Id(input.ParentId), ct);
                 RequireDraft(c);
-                if (input.SessionId is { } s && !await data.Read<LessonSession>().AnyAsync(x => x.Id == s && x.OfferingId == offeringId && x.Active, ct))
-                    throw LmsError.Invalid("جلسه باید فعال و متعلق به همین ارائه باشد.");
+                if (input.SessionId is { } s)
+                {
+                    var chosen = await data.Read<LessonSession>().SingleOrDefaultAsync(x => x.Id == s && x.OfferingId == offeringId && x.Active, ct)
+                        ?? throw LmsError.Invalid("جلسه باید فعال و متعلق به همین ارائه باشد.");
+                    if (!AcademicRules.Inside(chosen.OpensUtc, c.VisibleFromUtc, c.VisibleUntilUtc))
+                        throw LmsError.Invalid("جلسه باید در بازهٔ فصل قرار گیرد.");
+                }
                 var l = input.Id is { } id ? await data.Find<Lesson>(id, ct) : new Lesson { ChapterId = c.Id };
                 if (l.ChapterId != c.Id) throw LmsError.Missing();
+                if (l.VisibleFromUtc is not null && l.SessionId != input.SessionId)
+                    throw LmsError.Conflict("جلسهٔ درسکِ زمان‌بندی‌شده در کارگاه از این فرم تغییر نمی‌کند.");
                 l.Title = title; l.Position = input.Position; l.Body = LmsError.Text(input.Body, 32000, true); l.SessionId = input.SessionId; l.Active = input.Active;
                 if (input.Id is null) data.Db.Add(l);
                 result = l.Id; break;
@@ -303,6 +331,8 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
                 if (due < i.Term.StartsUtc || due >= i.Term.EndsUtc || cutoff < due || cutoff > i.Term.EndsUtc ||
                     input.MaxAttempts is < 1 or > 20 || input.MaxScore is <= 0 or > 1000 || decimal.Round(input.MaxScore, 2) != input.MaxScore)
                     throw LmsError.Invalid("موعد، تعداد تلاش یا سقف نمره معتبر نیست.");
+                if (a.OpensUtc >= due || c.VisibleFromUtc >= due || cutoff > c.VisibleUntilUtc)
+                    throw LmsError.Invalid("موعد باید پس از شروع و در بازهٔ فصل باشد.");
                 a.Title = title; a.Prompt = LmsError.Text(input.Body, 16000); a.Rubric = LmsError.Text(input.Rubric, 8000, true);
                 a.QuizSpec = ValidateQuiz(input.Quiz);
                 a.DueUtc = due; a.CutoffUtc = cutoff; a.MaxAttempts = input.MaxAttempts; a.MaxScore = input.MaxScore; a.Active = input.Active;
@@ -311,6 +341,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
             }
             default: throw LmsError.Missing();
         }
+        (await data.Find<Offering>(offeringId, ct)).Revision = Guid.NewGuid();
         return await data.Finish(tx, result, result, ct);
     }
     internal static QuizQuestionRow[]? QuizRows(Assessment a, bool includeQuizKey)
@@ -319,7 +350,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
         var questions = JsonSerializer.Deserialize<QuizQuestionRow[]>(a.QuizSpec) ?? throw LmsError.Conflict("ساختار آزمون قابل خواندن نیست.");
         return includeQuizKey ? questions : questions.Select(q => q with { CorrectIndex = null }).ToArray();
     }
-    private static string? ValidateQuiz(QuizQuestionRow[]? questions)
+    internal static string? ValidateQuiz(QuizQuestionRow[]? questions)
     {
         if (questions is null || questions.Length == 0) return null;
         if (questions.Length > 30) throw LmsError.Invalid("آزمون حداکثر ۳۰ سؤال دارد.");
@@ -348,13 +379,17 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access) : ILm
         if (c.PublishedUtc is not null) return true;
         if (!c.Active) throw LmsError.Conflict("ابتدا فصل را فعال کنید.");
         var lessons = await data.Read<Lesson>().Where(x => x.ChapterId == c.Id && x.Active).ToArrayAsync(ct);
-        var scheduled = (await data.Read<LessonSession>().Where(x => x.OfferingId == offeringId && x.Active).Select(x => x.Id).ToArrayAsync(ct)).ToHashSet();
-        if (lessons.Length == 0 || lessons.Any(x => x.SessionId is null || !scheduled.Contains(x.SessionId.Value)))
-            throw LmsError.Conflict("فصل باید درسک فعال با جلسهٔ زمان‌بندی‌شده داشته باشد.");
+        var scheduled = await data.Read<LessonSession>().Where(x => x.OfferingId == offeringId && x.Active).ToDictionaryAsync(x => x.Id, ct);
+        if (lessons.Length == 0 || lessons.Any(l => l.SessionId is not { } id || !scheduled.TryGetValue(id, out var session) ||
+            !AcademicRules.Inside(session.OpensUtc, c.VisibleFromUtc, c.VisibleUntilUtc)))
+            throw LmsError.Conflict("فصل باید درسک فعال با جلسهٔ زمان‌بندی‌شده در بازهٔ فصل داشته باشد.");
         var assignments = await data.Read<Assessment>().Where(x => x.ChapterId == c.Id && x.Active).ToArrayAsync(ct);
-        if (assignments.Any(x => !Publishable(x, info.Term) || x.CutoffUtc <= data.Now))
+        var lessonIds = lessons.Select(l => l.Id).ToHashSet();
+        if (assignments.Any(x => !Publishable(x, info.Term) || x.CutoffUtc <= data.Now ||
+            x.CutoffUtc > c.VisibleUntilUtc || x.DueUtc <= c.VisibleFromUtc || x.LessonId is { } id && !lessonIds.Contains(id)))
             throw LmsError.Conflict("مهلت تکلیف‌های فصل را پیش از انتشار تنظیم کنید.");
         c.PublishedUtc = data.Now;
+        (await data.Find<Offering>(offeringId, ct)).Revision = Guid.NewGuid();
         return await data.Finish(tx, true, c.Id, ct);
     }
 }

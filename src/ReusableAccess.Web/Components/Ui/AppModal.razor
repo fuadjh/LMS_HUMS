@@ -1,0 +1,33 @@
+<MudDialog Visible="@Visible" VisibleChanged="Notify" Options="@Options" Class="@CssClass" AriaLabel="@Title">
+    <TitleContent><MudText Typo="Typo.h6">@Title</MudText></TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrWhiteSpace(Lead)) { <p class="lms-muted">@Lead</p> }
+        @ChildContent
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div role="alert"><MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@Error</MudAlert></div>
+        }
+    </DialogContent>
+    <DialogActions>@Actions</DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Lead { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string CssClass { get; set; } = "ra-modal";
+    [Parameter] public MaxWidth Width { get; set; } = MaxWidth.Small;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool AllowEscape { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    private Task Notify(bool open) => !open && Busy ? Task.CompletedTask : VisibleChanged.InvokeAsync(open);
+    private DialogOptions Options => new()
+    {
+        FullWidth = true, MaxWidth = Width, BackdropClick = false, CloseButton = false,
+        CloseOnNavigation = true, CloseOnEscapeKey = AllowEscape && !Busy, DefaultFocus = DefaultFocus.FirstChild
+    };
+}

@@ -49,7 +49,7 @@
             @for (var a = 0; a < DateLabels.Length; a++)
             {
                 var i = a;
-                <label>@DateLabels[i]<input class="lms-date" placeholder="۱۴۰۵/۰۹/۰۱ ۰۸:۰۰" @bind="_dates[i]" /></label>
+                <PersianDateField Label="@DateLabels[i]" @bind-Value="_dates[i]" Disabled="@Busy" />
             }
             @if (_id.HasValue) { <label class="lms-inline"><input type="checkbox" @bind="_close" /> بستن قطعی؛ ثبت و ویرایش آموزشی متوقف می‌شود.</label> }
         }

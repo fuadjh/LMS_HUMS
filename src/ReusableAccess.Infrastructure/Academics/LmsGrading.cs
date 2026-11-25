@@ -21,7 +21,7 @@ internal sealed class LmsGrading(LmsData data, LmsAccess access) : ILmsGrading
     {
         await access.AsStudent(permission, ct);
         LmsData.Open(i.Offering.Term, now);
-        if (!i.Offering.Offering.Active || !i.Chapter.Active || i.Chapter.PublishedUtc is null || !i.Assessment.Active ||
+        if (!i.Offering.Offering.Active || !AcademicRules.CanReadAssessment(now, i.Chapter, i.Assessment) ||
             !AcademicRules.CanSee(now, i.Offering.Offering.PublishedUtc, i.Offering.Offering.VisibleUtc)) throw LmsError.Missing();
         if (!LmsOfferings.Publishable(i.Assessment, i.Offering.Term) || now >= i.Assessment.CutoffUtc)
             throw LmsError.Conflict("مهلت نهایی تحویل گذشته یا تنظیم نشده است.");

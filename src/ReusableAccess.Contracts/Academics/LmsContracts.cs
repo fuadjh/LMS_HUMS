@@ -3,7 +3,7 @@ using ReusableAccess.Domain.Academics;
 namespace ReusableAccess.Contracts;
 
 public sealed record LmsHome(Guid UserId, string DisplayName, bool PlatformAdmin, bool EducationAdmin, bool Teacher, bool Student,
-    string? StudyLabel, string? TeacherLabel, Guid? StudentAvatar, Guid? TeacherAvatar, string? CvUrl, string[] Permissions);
+    string? StudyLabel, string? TeacherLabel, Guid? StudentAvatar, Guid? TeacherAvatar, string? CvUrl, string[] Permissions, bool ScheduleStudioEnabled = false);
 public sealed record CalendarWindow(DateTimeOffset StartsUtc, DateTimeOffset EndsUtc, DateTimeOffset EnrollOpensUtc,
     DateTimeOffset EnrollClosesUtc, DateTimeOffset DropOpensUtc, DateTimeOffset DropClosesUtc);
 public sealed record CatalogEdit(Guid? Id, Guid? ParentId, Guid? RelatedId, string? Code, string? Title,
@@ -36,11 +36,14 @@ public sealed record SectionEdit(Guid? Id, Guid? ParentId, string Title, int Pos
     DateTimeOffset? CutoffUtc = null, int MaxAttempts = 1, decimal MaxScore = 20, bool Active = true, QuizQuestionRow[]? Quiz = null);
 public sealed record FileRow(Guid Id, string Name, long Bytes, string Extension);
 public sealed record LessonRow(Guid Id, string Title, int Position, Guid? SessionId, DateTimeOffset? OpensUtc, string? Body,
-    bool CanRead, bool Completed, bool Active, FileRow[] Files);
-public sealed record ChapterRow(Guid Id, string Title, int Position, DateTimeOffset? PublishedUtc, bool Active, LessonRow[] Lessons, AssessmentRow[] Assessments);
+    bool CanRead, bool Completed, bool Active, FileRow[] Files, string? Summary = null, DateTimeOffset? ClosesUtc = null,
+    Guid? CoverMediaId = null, Guid? TemplateItemKey = null);
+public sealed record ChapterRow(Guid Id, string Title, int Position, DateTimeOffset? PublishedUtc, bool Active, LessonRow[] Lessons, AssessmentRow[] Assessments,
+    DateTimeOffset? OpensUtc = null, DateTimeOffset? ClosesUtc = null, Guid? TemplateItemKey = null);
 public sealed record SessionRow(Guid Id, string Title, DateTimeOffset OpensUtc, bool Active);
 public sealed record AssessmentRow(Guid Id, Guid ChapterId, string Title, string? Prompt, string? Rubric,
-    DateTimeOffset? DueUtc, DateTimeOffset? CutoffUtc, int MaxAttempts, decimal MaxScore, bool Active, QuizQuestionRow[]? Quiz = null);
+    DateTimeOffset? DueUtc, DateTimeOffset? CutoffUtc, int MaxAttempts, decimal MaxScore, bool Active, QuizQuestionRow[]? Quiz = null,
+    Guid? LessonId = null, DateTimeOffset? OpensUtc = null, bool CanRead = true, bool IsQuiz = false, Guid? TemplateItemKey = null);
 public sealed record QuizQuestionRow(string Prompt, string[] Choices, int? CorrectIndex = null);
 public sealed record OfferingDetails(OfferingRow Offering, ChapterRow[] Chapters, SessionRow[] Sessions, CoTeacherRow[] CoTeachers,
     bool TeacherEditor, bool CanPublish, bool CanGrade, bool CanRelease, bool Lead, bool ReadOnly);

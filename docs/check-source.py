@@ -20,33 +20,40 @@ for p in (ROOT / 'docs').glob('*.json'):
     json.loads(p.read_text(encoding='utf-8'))
 
 src = ROOT / 'src'
-domain = src / 'ReusableAccess.Domain/Academics/AcademicEntities.cs'
-app = list((src / 'ReusableAccess.Application/Academics').glob('*Requests.cs'))
+domain = src / 'ReusableAccess.Domain/Academics'
+app = sorted((src / 'ReusableAccess.Application/Academics').glob('*Requests.cs'))
 infra = src / 'ReusableAccess.Infrastructure'
 mig = infra / 'Persistence/Migrations'
-up = (mig / '20261121203400_AddUniversityLms.cs').read_text()
+v1 = (mig / '20261121203400_AddUniversityLms.cs').read_text()
+v2 = (mig / '20261125090000_AddLmsStudio.cs').read_text()
 model = (infra / 'Academics/AcademicModel.cs').read_text()
-snapshot = (mig / 'AcademicSchemaV1.cs').read_text()
-classes = set(re.findall(r'public sealed class (\w+)', domain.read_text()))
-tables_up = set(re.findall(r'CreateTable\(\s*name: "(\w+)", schema: "lms"', up))
-tables_model = set(re.findall(r'b.ToTable\("(\w+)", "lms"\);', model))
-assert classes == tables_model == tables_up == set(re.findall(r'b.ToTable\("(\w+)", "lms"\);', snapshot))
-fks = re.findall(r'AddForeignKey\(.+\);', up)
+frozen1 = (mig / 'AcademicSchemaV1.cs').read_text()
+frozen2 = (mig / 'AcademicStudioSchemaV2.cs').read_text()
+snapshot = (mig / 'ApplicationDbContextModelSnapshot.cs').read_text(encoding='utf-8-sig')
+read_classes = lambda name: set(re.findall(r'public sealed class (\w+)', (domain / name).read_text()))
+read_tables = lambda text: set(re.findall(r'CreateTable\(\s*name: "(\w+)", schema: "lms"', text))
+read_models = lambda text: set(re.findall(r'b.ToTable\("(\w+)", "lms"\);', text))
+assert read_classes('AcademicEntities.cs') == read_tables(v1) == read_models(frozen1)
+assert read_classes('StudioEntities.cs') == read_tables(v2) == read_models(frozen2) == {'OfferingScheduleDraft', 'TemplateVersionMedia'}
+assert read_models(model) == read_tables(v1) | read_tables(v2)
+fks = re.findall(r'AddForeignKey\([^;]+;', v1 + v2)
 assert fks and all('ReferentialAction.NoAction' in x for x in fks)
-assert len(fks) == model.count('OnDelete(DeleteBehavior.NoAction)') == snapshot.count('OnDelete(DeleteBehavior.NoAction)')
-assert 'HasFilter("[EndedUtc] IS NULL")' in model and 'unique: true, filter: "[EndedUtc] IS NULL"' in up
-assert 'DropTable' not in up and 'DropColumn' not in up and 'DeleteData' not in up
-print(f'PASS: migration/model cross-check: {len(tables_up)} LMS tables, {len(fks)} NO ACTION foreign keys; active-record filtered index')
+assert len(fks) == model.count('OnDelete(DeleteBehavior.NoAction)') == (frozen1 + frozen2).count('OnDelete(DeleteBehavior.NoAction)')
+assert 'HasFilter("[EndedUtc] IS NULL")' in model and 'unique: true, filter: "[EndedUtc] IS NULL"' in v1
+assert 'AcademicStudioSchemaV2.Build(modelBuilder)' in snapshot and 'AcademicSchemaV1.Build(model)' in frozen2
+assert all(op not in v1 + v2 for op in ('DropTable', 'DropColumn', 'DeleteData'))
+print(f'PASS: {len(read_models(model))} tables in V1/V2, {len(fks)} NO ACTION FKs; static snapshot wiring only')
 
-api = (src / 'ReusableAccess.Api/Academics/LmsEndpoints.cs').read_text()
+api = '\n'.join((src / f'ReusableAccess.Api/Academics/{name}Endpoints.cs').read_text() for name in ('Lms', 'Studio'))
 registered = re.findall(r'r.Map(Get|Post|Put)\("(/[^"]+)"', api)
 assert len(registered) == len(set(registered))
 assert all('WithName(' in chunk for chunk in re.split(r'\br.Map(Get|Post|Put)\(', api)[1:] if chunk not in ('Get', 'Post', 'Put'))
-assert 'RequireAuthorization("AccessApi")' in api
+assert 'RequireAuthorization("AccessApi")' in api and 'r.MapLmsStudio();' in api
 assert 'WithMetadata(new RequestSizeLimitAttribute(UploadLimits.FileBytes))' in api
 handler_types = set(re.findall(r'public sealed record (\w+(?:Query|Command))\(', '\n'.join(p.read_text() for p in app)))
 endpoint_types = set(re.findall(r'new (\w+(?:Query|Command))\(', api))
 assert handler_types == endpoint_types, handler_types.symmetric_difference(endpoint_types)
+assert len(re.findall(r'WithName\("([^"]+)"\)', api)) == len(set(re.findall(r'WithName\("([^"]+)"\)', api)))
 compat = (src / 'ReusableAccess.Api/Completion/CompletionApiExtensions.cs').read_text('utf-8-sig')
 assert compat.count('"/api/console/writable-scopes"') == 1 and 'new GetWritableScopesQuery(Mode(c), Scope(c))' in compat
 print(f'PASS: {len(registered)} named LMS endpoints, {len(endpoint_types)} matching CQRS request types; writable-scopes wiring')

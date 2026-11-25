@@ -20,6 +20,14 @@ public static class LmsRegistration
         services.AddScoped<LmsAccess>();
         services.AddScoped<ILmsCatalog, LmsCatalog>();
         services.AddScoped<ILmsPeople, LmsPeople>();
+        services.AddSingleton<StudioFlags>();
+        services.AddScoped<StudioTemplates>();
+        services.AddScoped<StudioMaterializer>();
+        services.AddScoped<StudioScheduling>();
+        services.AddScoped<IStudioTemplateQueries>(p => p.GetRequiredService<StudioTemplates>());
+        services.AddScoped<IStudioTemplateCommands>(p => p.GetRequiredService<StudioTemplates>());
+        services.AddScoped<IStudioScheduleQueries>(p => p.GetRequiredService<StudioScheduling>());
+        services.AddScoped<IStudioScheduleCommands>(p => p.GetRequiredService<StudioScheduling>());
         services.AddScoped<LmsOfferings>();
         services.AddScoped<ILmsOfferings>(p => p.GetRequiredService<LmsOfferings>());
         services.AddScoped<LmsEnrollments>();

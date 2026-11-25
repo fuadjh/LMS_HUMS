@@ -1,49 +1,11 @@
-﻿@using MudBlazor
+@using MudBlazor
 @implements IDisposable
 
-<MudDialog Visible="@Visible"
-           VisibleChanged="VisibleChanged"
-           Options="@Options"
-           Class="ra-modal"
-           AriaLabel="@Title">
-    <TitleContent>
-        <MudText Typo="Typo.h6">@Title</MudText>
-    </TitleContent>
-    <DialogContent>
-        <EditForm Model="@Model"
-                  @key="Model"
-                  FormName="@_formName"
-                  Context="editContext"
-                  OnValidSubmit="Submit">
-            <DataAnnotationsValidator />
-            <ValidationSummary />
-
-            <fieldset class="ra-form-fields" disabled="@(Busy || _opening)">
-                @ChildContent
-            </fieldset>
-
-            <div class="ra-dialog-footer">
-                <MudButton ButtonType="ButtonType.Button"
-                           Disabled="@(Busy || _opening)"
-                           OnClick="Cancel">
-                    انصراف
-                </MudButton>
-                <MudButton ButtonType="ButtonType.Submit"
-                           Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           Disabled="@(Busy || _opening || !CanSave)">
-                    @if (Busy || _opening)
-                    {
-                        <MudProgressCircular Indeterminate="true"
-                                             Size="Size.Small"
-                                             Class="me-2" />
-                    }
-                    @SaveText
-                </MudButton>
-            </div>
-        </EditForm>
-    </DialogContent>
-</MudDialog>
+<AppFormModal TModel="object" Model="@Model" Visible="@Visible" VisibleChanged="VisibleChanged"
+              Title="@Title" Width="@Width" SaveText="@SaveText" Busy="@(Busy || _opening)"
+              CanSave="@CanSave" OnValidSave="Submit">
+    <ChildContent Context="formModel">@ChildContent</ChildContent>
+</AppFormModal>
 
 @code {
     [Parameter] public bool Visible { get; set; }
@@ -58,19 +20,7 @@
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback Opened { get; set; }
 
-    private readonly string _formName = "ra-editor-" + Guid.NewGuid().ToString("N");
     private bool _wasVisible, _pendingOpen, _opening, _disposed;
-
-    private DialogOptions Options => new()
-    {
-        FullWidth = true,
-        MaxWidth = Width,
-        BackdropClick = false,
-        CloseOnEscapeKey = false,
-        CloseButton = false,
-        CloseOnNavigation = true,
-        DefaultFocus = DefaultFocus.FirstChild
-    };
 
     protected override void OnParametersSet()
     {
@@ -103,15 +53,10 @@
         }
     }
 
-    private Task Submit() =>
+    private Task Submit(object model) =>
         Busy || _opening || !CanSave
             ? Task.CompletedTask
             : OnSave.InvokeAsync();
-
-    private Task Cancel() =>
-        Busy || _opening
-            ? Task.CompletedTask
-            : VisibleChanged.InvokeAsync(false);
 
     public void Dispose() => _disposed = true;
 }

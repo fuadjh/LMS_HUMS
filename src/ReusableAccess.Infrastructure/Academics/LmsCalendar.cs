@@ -62,6 +62,10 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
                      where l.Active
                          && l.SessionId == s.Id
                          && c.OfferingId == o.Id
+                         && (c.VisibleFromUtc == null || c.VisibleFromUtc <= s.OpensUtc)
+                         && (c.VisibleUntilUtc == null || c.VisibleUntilUtc > s.OpensUtc)
+                         && (l.VisibleFromUtc == null || l.VisibleFromUtc <= s.OpensUtc)
+                         && (l.VisibleUntilUtc == null || l.VisibleUntilUtc > s.OpensUtc)
                      select l.Id).Any())
             select new CalendarEntry(
                 o.Id, s.Id, "session", s.Title + " · " + course.Title, s.OpensUtc)
@@ -79,11 +83,13 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
                 AssessmentId = a.Id,
                 Title = a.Title + " · " + course.Title,
                 a.DueUtc,
-                a.CutoffUtc
+                a.CutoffUtc,
+                a.OpensUtc,
+                ChapterEnd = c.VisibleUntilUtc
             };
 
         var due = await assessments
-            .Where(x => x.DueUtc >= fromUtc && x.DueUtc < toUtc)
+            .Where(x => x.DueUtc >= fromUtc && x.DueUtc < toUtc && (x.ChapterEnd == null || x.DueUtc <= x.ChapterEnd))
             .Select(x => new CalendarEntry(
                 x.OfferingId, x.AssessmentId, "due", x.Title, x.DueUtc!.Value))
             .ToArrayAsync(ct);
@@ -91,11 +97,20 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
         var late = await assessments
             .Where(x => x.CutoffUtc > x.DueUtc
                 && x.CutoffUtc >= fromUtc
-                && x.CutoffUtc < toUtc)
+                && x.CutoffUtc < toUtc && (x.ChapterEnd == null || x.CutoffUtc <= x.ChapterEnd))
             .Select(x => new CalendarEntry(
                 x.OfferingId, x.AssessmentId, "cutoff", x.Title, x.CutoffUtc!.Value))
             .ToArrayAsync(ct);
 
+        var openingAssessments = await assessments
+            .Where(x => x.OpensUtc >= fromUtc && x.OpensUtc < toUtc && (x.ChapterEnd == null || x.OpensUtc < x.ChapterEnd))
+            .Select(x => new CalendarEntry(x.OfferingId, x.AssessmentId, "assessment-open", x.Title, x.OpensUtc!.Value)).ToArrayAsync(ct);
+        var openingChapters = await (from c in chapters
+                                     join o in data.Read<Offering>() on c.OfferingId equals o.Id
+                                     join course in data.Read<CatalogCourse>() on o.CourseId equals course.Id
+                                     where offers.Contains(o.Id) && c.VisibleFromUtc >= fromUtc && c.VisibleFromUtc < toUtc
+                                     select new CalendarEntry(o.Id, c.Id, "chapter-open", c.Title + " · " + course.Title, c.VisibleFromUtc!.Value))
+            .ToArrayAsync(ct);
         var termEntries = await (
             from o in data.Read<Offering>()
             join course in data.Read<CatalogCourse>() on o.CourseId equals course.Id
@@ -108,6 +123,8 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
         ).ToArrayAsync(ct);
 
         return sessions
+            .Concat(openingAssessments)
+            .Concat(openingChapters)
             .Concat(due)
             .Concat(late)
             .Concat(termEntries)

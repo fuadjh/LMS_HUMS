@@ -1,0 +1,33 @@
+<div class="ra-date-field">
+    <label for="@_fieldId">@Label</label>
+    <div class="date-actions">
+        <input id="@_fieldId" class="lms-date" type="text" maxlength="16" dir="ltr" value="@Value" @onchange="ChangeText"
+               autocomplete="off" disabled="@Disabled" placeholder="@(DayOnly ? "۱۴۰۵/۰۹/۰۱" : "۱۴۰۵/۰۹/۰۱ ۰۸:۰۰")" />
+        @if (UsingZo)
+        {
+            <MudButton ButtonType="ButtonType.Button" Disabled="@Disabled" OnClick="Open" aria-label="@($"انتخاب تاریخ: {Label}")">تقویم</MudButton>
+        }
+        @if (AllowClear && !string.IsNullOrWhiteSpace(Value))
+        {
+            <MudButton ButtonType="ButtonType.Button" Disabled="@Disabled" OnClick="Clear" aria-label="@($"پاک کردن تاریخ: {Label}")">پاک کردن</MudButton>
+        }
+    </div>
+</div>
+@if (UsingZo && _dialog)
+{
+    <AppModal Visible="@_dialog" VisibleChanged="ClosePicker" Title="@Label" AllowEscape="true" Error="@_error"
+              Lead="@(DayOnly ? "روز را انتخاب و سپس ثبت کنید." : $"روز را انتخاب کنید؛ ساعت به وقت {ZoneLabel} است.")">
+        <ChildContent>
+            <div class="ra-date-panel">@ZoCalendar()</div>
+            @if (!DayOnly)
+            {
+                <label for="@_clockId">ساعت (@ZoneLabel)</label>
+                <input type="time" id="@_clockId" value="@_clock" @onchange="ChangeClock" />
+            }
+        </ChildContent>
+        <Actions>
+            <MudButton ButtonType="ButtonType.Button" OnClick="() => ClosePicker(false)">انصراف</MudButton>
+            <MudButton ButtonType="ButtonType.Button" Variant="Variant.Filled" Color="Color.Primary" OnClick="Commit">ثبت تاریخ</MudButton>
+        </Actions>
+    </AppModal>
+}

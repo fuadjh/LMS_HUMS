@@ -16,6 +16,8 @@ internal sealed class LmsAuditMiddleware(RequestDelegate next)
         if (!isApi && !form && !logout && !oidc) { await next(c); return; }
         // Use only endpoint metadata and stable categories, not raw route values, query strings, headers, or bodies.
         var named = c.GetEndpoint()?.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName;
+        // A read-only preview may use POST for a large input. Retain audit of invalid/denied requests below.
+        if (c.GetEndpoint()?.Metadata.GetMetadata<LmsReadOnlyPost>() is not null) write = false;
         var authAction = form ? path.Value?.ToLowerInvariant().Split('/').Last() switch
         {
             "password" => "identity.login", "challenge" => "identity.login.challenge", "change-required" => "identity.password.change-required",

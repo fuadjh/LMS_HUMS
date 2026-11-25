@@ -6,7 +6,7 @@ using ReusableAccess.Infrastructure.Identity;
 
 namespace ReusableAccess.Infrastructure.Academics;
 
-internal sealed class LmsCatalog(LmsData data, LmsAccess access) : ILmsCatalog
+internal sealed class LmsCatalog(LmsData data, LmsAccess access, StudioFlags flags) : ILmsCatalog
 {
     public async Task<LmsHome> HomeAsync(CancellationToken ct)
     {
@@ -15,7 +15,7 @@ internal sealed class LmsCatalog(LmsData data, LmsAccess access) : ILmsCatalog
         var student = access.Student ? await data.Read<StudentProfile>().SingleOrDefaultAsync(x => x.Id == user.Id, ct) : null;
         var teacher = access.Teacher ? await data.Read<InstructorProfile>().SingleOrDefaultAsync(x => x.Id == user.Id, ct) : null;
         return new(user.Id, user.DisplayName, user.IsPlatformSuperAdmin, access.EducationAdmin, access.Teacher, access.Student,
-            study?.Cohort.Label, teacher?.Classification, student?.AvatarId, teacher?.AvatarId, teacher?.CvUrl, access.Keys.ToArray());
+            study?.Cohort.Label, teacher?.Classification, student?.AvatarId, teacher?.AvatarId, teacher?.CvUrl, access.Keys.ToArray(), flags.ScheduleEnabled);
     }
     public async Task<CatalogRow[]> ListAsync(string kind, CancellationToken ct)
     {
