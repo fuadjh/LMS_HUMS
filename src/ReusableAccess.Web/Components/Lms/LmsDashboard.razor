@@ -1,84 +1,164 @@
 @page "/lms"
+@page "/lms/panel/{Mode}"
 @attribute [Authorize]
 @inherits LmsPage
+@using ReusableAccess.Web.Academics
 
-<PageTitle>سامانهٔ یادگیری</PageTitle>
+<PageTitle>@Title</PageTitle>
 <div class="lms">
-    <header class="lms-head">
-        <div class="lms-row"><span class="lms-pill">محیط آموزشی دانشگاه</span><span>@DateText(DateTimeOffset.UtcNow) · تهران</span></div>
-        <h1>@(_home is null ? "سامانهٔ یادگیری" : $"سلام، {_home.DisplayName}")</h1>
-        <p>کلاس‌ها، پرونده‌های آموزشی و تقویم؛ با همان حساب دانشگاهی.</p>
+    <header class="lms-head lms-hero-home">
+        <svg class="lms-hero-art" viewBox="0 0 340 204" aria-hidden="true">
+            <defs><linearGradient id="workspace-layers" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".98" /><stop offset="1" stop-color="#b9a8f3" stop-opacity=".36" /></linearGradient></defs>
+            <g fill="none" stroke="#9c8dc9" opacity=".55">
+                <ellipse cx="173" cy="104" rx="130" ry="52" transform="rotate(-19 173 104)" />
+                <ellipse cx="173" cy="104" rx="117" ry="59" transform="rotate(23 173 104)" />
+            </g>
+            <g stroke="white" fill="url(#workspace-layers)">
+                <path d="m82 121 92-43 89 43-89 46z" /><path d="m82 99 92-43 89 43-89 46z" /><path d="m82 77 92-43 89 43-89 46z" />
+            </g>
+            <path d="m146 78 28-13 29 13-29 14z" fill="#fff" stroke="#8c79c1" />
+            <path d="M155 83v11l19 8 20-8V83" fill="none" stroke="#8c79c1" />
+            <g fill="#fff" stroke="#a094cd"><circle cx="54" cy="131" r="5" /><circle cx="278" cy="64" r="7" /><circle cx="265" cy="154" r="4" /></g>
+        </svg>
+        <div><span class="lms-pill">محیط آموزشی دانشگاه</span></div>
+        <h1>@Title</h1><p>@Description</p>
+        @if (_home is { } header && ActiveMode != "entry")
+        { <p>@header.DisplayName · <bdi>@DateText(DateTimeOffset.UtcNow)</bdi> · تهران</p> }
     </header>
     @if (Error is not null) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
-    @if (Busy && _home is null) { <MudProgressLinear Indeterminate="true" /> }
-    @if (_home is { } h)
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (_home is { } home)
     {
-        @if (h.PlatformAdmin || h.EducationAdmin)
+        @if (ActiveMode == "entry")
+        { <MudAlert Severity="Severity.Info">این حساب به پنل درخواستی دسترسی ندارد یا هنوز پروفایل آموزشی ندارد.</MudAlert> }
+        else
         {
-            <section class="lms lms-admin mb-4" aria-labelledby="lms-admin-label">
-                <h2 id="lms-admin-label">میز مدیریت آموزشی</h2><p class="lms-muted">ساختار، افراد و گروه‌ها در قلمرو مجاز.</p>
-                <div class="lms-grid">
-                    @Card("ساختار و نیم‌سال", "دانشکده، رشته، مقطع، ورودی، درس و حذف‌واضافه", "/lms/admin/catalog", LmsPermissions.CatalogRead)
-                    @Card("استادان و دانشجویان", "استعلام کد ملی، پرونده و ورود Excel", "/lms/admin/people", LmsPermissions.PeopleRead)
-                    @Card("ارائه‌ها و ثبت‌نام", "واگذاری استاد و مدیریت فهرست ارائه", "/lms/offerings/admin", LmsPermissions.Assign)
-                    @if (h.PlatformAdmin)
+            <div class="ra-lms-stats">
+                @Stat("ارائه در فهرست مجاز", _offerings?.Length, Icons.Material.Filled.School)
+                @Stat(ActiveMode == "student" ? "ثبت‌نام فعال" : "ارائهٔ فعال و جاری", _offerings?.Count(x => x.Active && !x.Closed &&
+                    (ActiveMode != "student" || x.Status == EnrollmentStatus.Active)), Icons.Material.Filled.List)
+                @if (ActiveMode == "admin")
+                {
+                    @Stat("دانشکدهٔ قابل مشاهده", _faculties?.Length, Icons.Material.Filled.Home)
+                    @Stat("رشتهٔ قابل مشاهده", _majorCount, Icons.Material.Filled.Group)
+                }
+                else if (ActiveMode == "teacher")
+                {
+                    @Stat("تکلیف در صف بررسی", _queue?.Length, Icons.Material.Filled.Assignment)
+                    @Stat("پاسخ‌های در انتظار (صف فعلی)", _queue?.Sum(x => x.Pending), Icons.Material.Filled.Event)
+                }
+                else
+                {
+                    @Stat("ارائهٔ پایان‌یافته در سابقه", _offerings?.Count(x => x.Closed), Icons.Material.Filled.Event)
+                    @Stat("ارائه با وضعیت خروج", _offerings?.Count(x => x.Status is EnrollmentStatus.RemovedByAdmin or EnrollmentStatus.WithdrawnByStudent), Icons.Material.Filled.Assignment)
+                }
+            </div>
+            <div class="ra-lms-dashboard-grid">
+                <section class="lms-card">
+                    @if (ActiveMode == "admin" && _faculties is { } faculties)
                     {
-                        @Card("قلمرو ادمین‌ها", "تخصیص قلمرو دانشکده و رشته", "/lms/admin/grants", LmsPermissions.Grant)
-                        @Card("لاگ و پیامک", "پیگیری ارسال‌ها، رویداد امنیتی و تنظیم درگاه", "/lms/admin/operations", LmsPermissions.Logs)
-                        @Card("کاربران و نقش‌ها", "مدیریت سراسری حساب و مجوزهای طبقه‌بندی‌شده", "/console/roles", LmsPermissions.Grant)
+                        <AppDataTable TRow="CatalogRow" Items="@(faculties.Take(8).ToArray())" RowKey="@(r => r.Id)" Caption="دانشکده‌ها در قلمرو شما">
+                            <Columns><th scope="col">دانشکده</th><th scope="col">کد</th><th scope="col">وضعیت</th></Columns>
+                            <RowCells Context="row"><td>@row.Title</td><td><bdi>@row.Code</bdi></td><td>@(row.Active ? "فعال" : "بایگانی")</td></RowCells>
+                        </AppDataTable>
+                        <MudButton Href="/lms/admin/catalog">مشاهدهٔ ساختار آموزشی</MudButton>
                     }
+                    else
+                    {
+                        <AppDataTable TRow="OfferingRow" Items="@((_offerings ?? []).Take(6).ToArray())" RowKey="@(r => r.Id)"
+                                      Caption="@(ActiveMode == "teacher" ? "دروس تحت تدریس" : "ارائه‌های آموزشی")" Loading="@Busy">
+                            <Columns><th scope="col">درس و گروه</th><th scope="col">نیم‌سال</th><th scope="col">اقدام</th></Columns>
+                            <RowCells Context="row">
+                                <td><strong>@row.Course</strong><br /><small>@Fa(row.Group)</small></td><td>@Fa(row.Term)</td>
+                                <td><MudButton Href="@($"/lms/offer/{row.Id:D}/{ActiveMode}")">ورود به ارائه</MudButton></td>
+                            </RowCells>
+                        </AppDataTable>
+                        @if (_offerings is not null) { <MudButton Href="@($"/lms/offerings/{ActiveMode}")">همهٔ ارائه‌ها</MudButton> }
+                    }
+                </section>
+                <div class="lms-stack">
+                    @if (ActiveMode == "teacher" && _queue is { } queue)
+                    {
+                        <section class="lms-card" id="review">
+                            <h2>صف بررسی تکالیف</h2>
+                            @foreach (var row in queue.Take(12))
+                            {
+                                <div class="lms-row" @key="row.AssessmentId">
+                                    <div><strong>@row.Title</strong><br /><small class="lms-muted">@row.Course · گروه @Fa(row.Group) · @Fa(row.Pending) پاسخ</small></div>
+                                    <MudButton Href="@($"/lms/offer/{row.OfferingId:D}/teacher?tab=assignments&assessment={row.AssessmentId:D}")">بررسی</MudButton>
+                                </div>
+                            }
+                            @if (queue.Length == 0) { <p class="lms-muted">پاسخی در انتظار بررسی نیست.</p> }
+                            @if (queue.Length > 12) { <p class="lms-muted">۱۲ تکلیف نخست نمایش داده شده‌اند؛ بقیه از صفحهٔ هر ارائه قابل دسترس‌اند.</p> }
+                        </section>
+                    }
+                    <section class="lms-card">
+                        <h2>@(ActiveMode == "admin" ? "واگذاری و مدیریت" : "پیگیری یادگیری")</h2>
+                        @if (ActiveMode == "admin" && Can(LmsPermissions.Assign))
+                        { <MudButton Href="/lms/offerings/admin">ارائه‌ها و گروه‌های رسمی</MudButton> }
+                        @if (ActiveMode != "admin" && Can(LmsPermissions.Calendar))
+                        { <MudButton Href="@($"/lms/calendar/{ActiveMode}")">تقویم و اعلان‌ها</MudButton> }
+                        @if (ActiveMode == "student" && Can(LmsPermissions.Learn))
+                        { <MudButton Href="/lms/transcript">کارنامهٔ غیررسمی</MudButton> }
+                        @if (ActiveMode == "teacher" && home.CvUrl is not null)
+                        { <p><a class="lms-file" href="@home.CvUrl" target="_blank" rel="noopener noreferrer">رزومه</a></p> }
+                        @if ((ActiveMode is "student" or "teacher") && Can(LmsPermissions.OwnAvatar))
+                        {
+                            @if ((ActiveMode == "teacher" ? home.TeacherAvatar : home.StudentAvatar) is { } avatar)
+                            { <img class="lms-avatar" alt="تصویر پروفایل" src="@($"/bff/lms/files/{avatar:D}")" /> }
+                            <MudButton OnClick="OpenAvatar">تصویر پروفایل</MudButton>
+                        }
+                    </section>
                 </div>
-            </section>
+            </div>
         }
-        @if (h.Teacher)
-        {
-            <section class="lms lms-teacher mb-4" aria-labelledby="lms-teacher-label">
-                <div class="lms-row">
-                    @if (h.TeacherAvatar is { } avatar) { <img class="lms-avatar" alt="تصویر پروفایل استاد" src="@($"/bff/lms/files/{avatar:D}")" /> }
-                    <div><h2 id="lms-teacher-label">میز استاد</h2><p class="lms-muted">@h.TeacherLabel</p></div>
-                    @if (h.CvUrl is not null) { <a class="lms-file" href="@h.CvUrl" target="_blank" rel="noopener noreferrer">رزومه</a> }
-                    @if (Can(LmsPermissions.OwnAvatar)) { <MudButton OnClick="() => OpenAvatar(false)">تصویر پروفایل</MudButton> }
-                </div>
-                <div class="lms-grid">
-                    @Card("ارائه‌های تدریس", "زمان‌بندی، فصل‌ها، تصحیح و قالب خصوصی", "/lms/offerings/teacher", LmsPermissions.Teach)
-                    @Card("بانک الگوهای من", "ساخت الگو، نسخه‌بندی، فایل خصوصی و آماده‌سازی ارائهٔ واگذارشده", "/lms/templates", LmsPermissions.Template)
-                    @Card("تقویم استاد", "جلسه‌ها، مهلت‌ها و اعلان‌ها", "/lms/calendar/teacher", LmsPermissions.Calendar)
-                </div>
-            </section>
-        }
-        @if (h.Student)
-        {
-            <section class="lms-card" aria-labelledby="lms-student-label">
-                <div class="lms-row">
-                    @if (h.StudentAvatar is { } avatar) { <img class="lms-avatar" alt="تصویر پروفایل دانشجو" src="@($"/bff/lms/files/{avatar:D}")" /> }
-                    <div><h2 id="lms-student-label">میز دانشجو</h2><p class="lms-muted">@(h.StudyLabel ?? "پروندهٔ فعال انتخاب نشده است.")</p></div>
-                    @if (Can(LmsPermissions.OwnAvatar)) { <MudButton OnClick="() => OpenAvatar(true)">تصویر پروفایل</MudButton> }
-                </div>
-                <div class="lms-grid">
-                    @Card("دروس ارائه‌شده", "اخذ درس، محتوای کلاس و تکلیف", "/lms/offerings/student", LmsPermissions.Learn)
-                    @Card("تقویم و اعلان", "جلسه‌ها، مهلت‌ها و وضعیت یادآوری", "/lms/calendar/student", LmsPermissions.Calendar)
-                    @Card("کارنامهٔ غیررسمی", "نمره‌های منتشرشده و سابقهٔ ثبت‌نام", "/lms/transcript", LmsPermissions.Learn)
-                    @Card("گفتگو", "پیام گروهی یا خصوصیِ ورودی فعال", "/lms/chat", LmsPermissions.Chat)
-                </div>
-            </section>
-        }
-        @if (!h.Student && !h.Teacher && !h.PlatformAdmin && !h.EducationAdmin)
-        { <MudAlert Severity="Severity.Info">برای این حساب هنوز پروفایل یا قلمرو آموزشی ثبت نشده است.</MudAlert> }
         <LmsDialog @bind-Visible="_avatar" Title="تصویر پروفایل" Lead="تصویر فقط در مسیر مجاز و خصوصی در دسترس است.">
-            <LmsUpload TargetId="@h.UserId" Purpose="@_purpose" Uploaded="AvatarChanged" />
+            <LmsUpload TargetId="@home.UserId" Purpose="@_purpose" Uploaded="AvatarChanged" />
         </LmsDialog>
     }
 </div>
 
 @code {
+    [Parameter] public string? Mode { get; set; }
     private LmsHome? _home;
+    private OfferingRow[]? _offerings;
+    private CatalogRow[]? _faculties;
+    private AssignmentQueueRow[]? _queue;
+    private int? _majorCount;
     private bool _avatar;
     private MediaPurpose _purpose;
-    protected override Task OnInitializedAsync() => Run(async () => _home = await Get<LmsHome>("me"));
+    private string ActiveMode { get; set; } = "entry";
+    private string Title => ActiveMode switch { "admin" => "نمای کلی مدیریت آموزش", "teacher" => "نمای کلی تدریس", "student" => "برنامهٔ یادگیری", _ => "سامانهٔ یادگیری" };
+    private string Description => ActiveMode switch
+    {
+        "admin" => "پایش ساختار آموزشی، واگذاری ارائه‌ها و کنترل قلمرو.",
+        "teacher" => "دروس واگذارشده، بانک‌های مستقل و پاسخ‌های در انتظار بررسی.",
+        "student" => "دروس اخذشده، محتوای زمان‌بندی‌شده و تکالیف مستقل.",
+        _ => "دسترسی‌های آموزشی با همان حساب دانشگاهی."
+    };
+
+    protected override Task OnParametersSetAsync() => Run(async () =>
+    {
+        _home ??= await Get<LmsHome>("me");
+        ActiveMode = Mode is null ? LmsLayoutRoutes.Available(_home).FirstOrDefault() ?? "entry" :
+            LmsLayoutRoutes.Allowed(_home, Mode) ? Mode : "entry";
+        _offerings = null; _faculties = null; _queue = null; _majorCount = null;
+        if ((ActiveMode == "admin" && Can(LmsPermissions.Assign)) || (ActiveMode == "teacher" && Can(LmsPermissions.Teach)) ||
+            (ActiveMode == "student" && Can(LmsPermissions.Learn)))
+            _offerings = await Get<OfferingRow[]>($"offerings?view={ActiveMode}&mine={(ActiveMode == "student" ? "true" : "false")}");
+        if (ActiveMode == "admin" && Can(LmsPermissions.CatalogRead))
+        {
+            _faculties = await Get<CatalogRow[]>("catalog/faculties");
+            _majorCount = (await Get<CatalogRow[]>("catalog/majors")).Length;
+        }
+        if (ActiveMode == "teacher" && Can(LmsPermissions.Teach) && (Can(LmsPermissions.Grade) || Can(LmsPermissions.Release)))
+            _queue = await Get<AssignmentQueueRow[]>("teaching/assignment-queue");
+    });
     private bool Can(string p) => _home?.Permissions.Contains(p) == true;
-    private void OpenAvatar(bool student) { _purpose = student ? MediaPurpose.StudentAvatar : MediaPurpose.InstructorAvatar; _avatar = true; }
+    private void OpenAvatar()
+    { _purpose = ActiveMode == "student" ? MediaPurpose.StudentAvatar : MediaPurpose.InstructorAvatar; _avatar = true; }
     private Task AvatarChanged(FileRow _) => Run(async () => _home = await Get<LmsHome>("me"));
-    private RenderFragment Card(string title, string hint, string href, string permission) => @<text>
-        @if (Can(permission)) { <a class="lms-card lms-link" href="@href"><h3>@title</h3><p class="lms-muted">@hint</p></a> }
-    </text>;
+    private RenderFragment Stat(string label, int? value, string icon) => @<article class="lms-card ra-lms-stat">
+        <MudIcon Icon="@icon" /><strong>@(value is { } count ? Fa(count) : "—")</strong><small class="lms-muted">@label</small>
+    </article>;
 }

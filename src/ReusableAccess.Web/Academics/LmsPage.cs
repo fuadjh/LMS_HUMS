@@ -29,6 +29,16 @@ public abstract class LmsPage : ComponentBase
     protected static DateTimeOffset InputDate(string? value) => JalaliTime.TryParse(value, out var utc) ? utc
         : throw new ArgumentException("تاریخ/ساعت شمسی را به شکل ۱۴۰۵/۰۹/۰۱ ۱۴:۳۰ وارد کنید.");
     protected static DateTimeOffset? DateOrNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : InputDate(value);
+    // Only these new scheduling forms apply the day-only policy; exact times stay unchanged.
+    protected static DateTimeOffset? AvailabilityDate(string? value, bool end = false)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (!JalaliTime.TryParseLocal(value, out var local))
+            throw new ArgumentException("تاریخ شمسی معتبر نیست؛ نمونه: ۱۴۰۵/۰۹/۰۱ ۰۸:۰۰");
+        if (value.Split(['/', ' ', ':'], StringSplitOptions.RemoveEmptyEntries).Length == 3)
+            local = end ? local.Date.AddDays(1) : local.Date.AddHours(8);
+        return JalaliTime.FromDate(local);
+    }
     internal static string DateText(DateTimeOffset? value) => value is { } t ? Fa(JalaliTime.Display(t)) : "—";
     protected static string? DateInput(DateTimeOffset? value) => value.HasValue ? DateText(value) : null;
     internal static string Fa(object? value) => string.Concat((Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "")

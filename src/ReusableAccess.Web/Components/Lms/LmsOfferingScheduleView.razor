@@ -26,7 +26,6 @@
                     <span class="lms-pill">@LmsScheduleGrid.Kind(row.Kind)</span>
                     <h3>@row.Title</h3>
                     <p>شروع: <bdi>@DateText(row.Times.Start)</bdi></p>
-                    @if (row.Kind == ScheduleKind.Assessment) { <p>موعد عادی: <bdi>@DateText(row.Times.Due)</bdi></p> }
                     <p>@LmsScheduleGrid.Field(row.Kind, ScheduleField.End): <bdi>@DateText(row.Times.End)</bdi></p>
                 </article>
             }

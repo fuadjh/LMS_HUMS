@@ -177,6 +177,7 @@ public sealed class Chapter
     public DateTimeOffset? VisibleUntilUtc { get; set; }
 }
 
+// Kept as historical data. No learning rule reads this table.
 public sealed class LessonSession
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -190,7 +191,6 @@ public sealed class Lesson
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ChapterId { get; set; }
-    public Guid? SessionId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Body { get; set; } = string.Empty;
     public int Position { get; set; }
@@ -200,6 +200,7 @@ public sealed class Lesson
     public DateTimeOffset? VisibleUntilUtc { get; set; }
     public string? Summary { get; set; }
     public Guid? CoverMediaId { get; set; }
+    public bool NeedsAvailabilityReview { get; set; }
 }
 
 public sealed class LessonFile
@@ -213,7 +214,7 @@ public sealed class LessonFile
 public sealed class Assessment
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid ChapterId { get; set; }
+    public Guid OfferingId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Prompt { get; set; } = string.Empty;
     public string Rubric { get; set; } = string.Empty;
@@ -223,8 +224,12 @@ public sealed class Assessment
     public decimal MaxScore { get; set; }
     public string? QuizSpec { get; set; }
     public bool Active { get; set; }
-    public Guid? TemplateItemKey { get; set; }
-    public Guid? LessonId { get; set; }
+    public DateTimeOffset? PublishedUtc { get; set; }
+    // Old assessments retain a copied, never live, visibility boundary where one existed.
+    public DateTimeOffset? VisibleUntilUtc { get; set; }
+    public decimal? ExtensionPenalty { get; set; }
+    public Guid? TemplateVersionId { get; set; }
+    public Guid Revision { get; set; } = Guid.NewGuid();
     public DateTimeOffset? OpensUtc { get; set; }
 }
 
@@ -267,6 +272,10 @@ public sealed class Submission
     public bool IsLate { get; set; }
     public string Body { get; set; } = string.Empty;
     public string? QuizAnswers { get; set; }
+    // Null on legacy attempts; their grades and original grading scale are never backfilled.
+    public decimal? ScoreLimit { get; set; }
+    public Guid? RequestId { get; set; }
+    public string? RequestHash { get; set; }
 }
 
 public sealed class SubmissionFile

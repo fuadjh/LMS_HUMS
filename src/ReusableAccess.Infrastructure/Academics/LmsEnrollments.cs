@@ -6,7 +6,7 @@ using ReusableAccess.Infrastructure.Identity;
 
 namespace ReusableAccess.Infrastructure.Academics;
 
-internal sealed record LessonInfo(Lesson Lesson, Chapter Chapter, LessonSession? Session, OfferingInfo Info);
+internal sealed record LessonInfo(Lesson Lesson, Chapter Chapter, OfferingInfo Info);
 
 internal sealed class LmsEnrollments(LmsData data, LmsAccess access, LmsOfferings offerings) : ILmsEnrollment
 {
@@ -94,11 +94,10 @@ internal sealed class LmsEnrollments(LmsData data, LmsAccess access, LmsOffering
         var l = await data.Read<Lesson>().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw LmsError.Missing();
         var c = await data.Read<Chapter>().SingleAsync(x => x.Id == l.ChapterId, ct);
         var i = await access.Offering(c.OfferingId, ct);
-        var s = l.SessionId is { } sid ? await data.Read<LessonSession>().SingleOrDefaultAsync(x => x.Id == sid && x.OfferingId == c.OfferingId && x.Active, ct) : null;
-        return new(l, c, s, i);
+        return new(l, c, i);
     }
     internal static bool PublishedLesson(LessonInfo info, DateTimeOffset now) => info.Info.Offering.Active && info.Lesson.Active && info.Chapter.Active &&
-        AcademicRules.CanSee(now, info.Info.Offering.PublishedUtc, info.Info.Offering.VisibleUtc) && AcademicRules.CanReadLesson(now, info.Chapter, info.Lesson, info.Session);
+        AcademicRules.CanSee(now, info.Info.Offering.PublishedUtc, info.Info.Offering.VisibleUtc) && AcademicRules.CanReadLesson(now, info.Chapter, info.Lesson);
     public async Task<bool> ProgressAsync(Guid lessonId, CancellationToken ct)
     {
         await using var tx = await data.Transaction(ct);

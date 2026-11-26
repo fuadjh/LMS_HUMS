@@ -30,7 +30,18 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
                             select o.Id).Distinct().ToArrayAsync(ct);
         }
         else throw LmsError.Missing();
-        return await Events(offers, fromUtc, toUtc, view == "student", ct);
+        var scheduled = await Events(offers, fromUtc, toUtc, view == "student", ct);
+        if (view != "teacher") return scheduled;
+        // Receipt data is scoped independently of the upcoming-event/notification job.
+        var receipts = await (from r in data.Read<AssignmentCalendarReceipt>()
+                              join s in data.Read<Submission>() on r.SubmissionId equals s.Id
+                              join a in data.Read<Assessment>() on s.AssessmentId equals a.Id
+                              join o in data.Read<Offering>() on a.OfferingId equals o.Id
+                              where r.InstructorId == id && o.LeadId == id && r.ReceivedUtc >= fromUtc && r.ReceivedUtc < toUtc
+                              orderby r.ReceivedUtc descending, r.SubmissionId
+                              select new CalendarEntry(a.OfferingId, s.Id, "assignment-received", r.Title, r.ReceivedUtc, a.Id))
+            .ToArrayAsync(ct);
+        return scheduled.Concat(receipts).OrderBy(x => x.AtUtc).ThenBy(x => x.Title).ThenBy(x => x.EventId).ToArray();
     }
     internal async Task<CalendarEntry[]> Events(
        Guid[] offers,
@@ -48,63 +59,24 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
         var chapters = data.Read<Chapter>()
             .Where(c => c.Active && (!published || c.PublishedUtc != null));
 
-        var sessions = await (
-            from s in data.Read<LessonSession>()
-            join o in data.Read<Offering>() on s.OfferingId equals o.Id
-            join course in data.Read<CatalogCourse>() on o.CourseId equals course.Id
-            where offers.Contains(o.Id)
-                && s.Active
-                && s.OpensUtc >= fromUtc
-                && s.OpensUtc < toUtc
-                && (!published ||
-                    (from l in data.Read<Lesson>()
-                     join c in chapters on l.ChapterId equals c.Id
-                     where l.Active
-                         && l.SessionId == s.Id
-                         && c.OfferingId == o.Id
-                         && (c.VisibleFromUtc == null || c.VisibleFromUtc <= s.OpensUtc)
-                         && (c.VisibleUntilUtc == null || c.VisibleUntilUtc > s.OpensUtc)
-                         && (l.VisibleFromUtc == null || l.VisibleFromUtc <= s.OpensUtc)
-                         && (l.VisibleUntilUtc == null || l.VisibleUntilUtc > s.OpensUtc)
-                     select l.Id).Any())
-            select new CalendarEntry(
-                o.Id, s.Id, "session", s.Title + " · " + course.Title, s.OpensUtc)
-        ).ToArrayAsync(ct);
-
         var assessments =
             from a in data.Read<Assessment>()
-            join c in chapters on a.ChapterId equals c.Id
-            join o in data.Read<Offering>() on c.OfferingId equals o.Id
+            join o in data.Read<Offering>() on a.OfferingId equals o.Id
             join course in data.Read<CatalogCourse>() on o.CourseId equals course.Id
-            where offers.Contains(o.Id) && a.Active
+            where offers.Contains(o.Id) && a.Active && (!published || a.PublishedUtc != null)
             select new
             {
-                OfferingId = o.Id,
-                AssessmentId = a.Id,
-                Title = a.Title + " · " + course.Title,
-                a.DueUtc,
-                a.CutoffUtc,
-                a.OpensUtc,
-                ChapterEnd = c.VisibleUntilUtc
+                OfferingId = o.Id, AssessmentId = a.Id, Title = a.Title + " · " + course.Title, a.DueUtc, a.OpensUtc,
+                Cutoff = a.VisibleUntilUtc != null && (a.CutoffUtc == null || a.VisibleUntilUtc < a.CutoffUtc)
+                    ? a.VisibleUntilUtc : a.CutoffUtc
             };
 
-        var due = await assessments
-            .Where(x => x.DueUtc >= fromUtc && x.DueUtc < toUtc && (x.ChapterEnd == null || x.DueUtc <= x.ChapterEnd))
-            .Select(x => new CalendarEntry(
-                x.OfferingId, x.AssessmentId, "due", x.Title, x.DueUtc!.Value))
-            .ToArrayAsync(ct);
-
-        var late = await assessments
-            .Where(x => x.CutoffUtc > x.DueUtc
-                && x.CutoffUtc >= fromUtc
-                && x.CutoffUtc < toUtc && (x.ChapterEnd == null || x.CutoffUtc <= x.ChapterEnd))
-            .Select(x => new CalendarEntry(
-                x.OfferingId, x.AssessmentId, "cutoff", x.Title, x.CutoffUtc!.Value))
-            .ToArrayAsync(ct);
-
-        var openingAssessments = await assessments
-            .Where(x => x.OpensUtc >= fromUtc && x.OpensUtc < toUtc && (x.ChapterEnd == null || x.OpensUtc < x.ChapterEnd))
-            .Select(x => new CalendarEntry(x.OfferingId, x.AssessmentId, "assessment-open", x.Title, x.OpensUtc!.Value)).ToArrayAsync(ct);
+        var due = await assessments.Where(x => x.DueUtc >= fromUtc && x.DueUtc < toUtc && x.DueUtc <= x.Cutoff)
+            .Select(x => new CalendarEntry(x.OfferingId, x.AssessmentId, "due", x.Title, x.DueUtc!.Value, x.AssessmentId)).ToArrayAsync(ct);
+        var late = await assessments.Where(x => x.Cutoff != x.DueUtc && x.Cutoff >= fromUtc && x.Cutoff < toUtc)
+            .Select(x => new CalendarEntry(x.OfferingId, x.AssessmentId, "cutoff", x.Title, x.Cutoff!.Value, x.AssessmentId)).ToArrayAsync(ct);
+        var openingAssessments = await assessments.Where(x => x.OpensUtc >= fromUtc && x.OpensUtc < toUtc && x.OpensUtc < x.Cutoff)
+            .Select(x => new CalendarEntry(x.OfferingId, x.AssessmentId, "assessment-open", x.Title, x.OpensUtc!.Value, x.AssessmentId)).ToArrayAsync(ct);
         var openingChapters = await (from c in chapters
                                      join o in data.Read<Offering>() on c.OfferingId equals o.Id
                                      join course in data.Read<CatalogCourse>() on o.CourseId equals course.Id
@@ -122,8 +94,7 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
                 o.Id, o.Id, "add-drop", course.Title, term.DropClosesUtc)
         ).ToArrayAsync(ct);
 
-        return sessions
-            .Concat(openingAssessments)
+        return openingAssessments
             .Concat(openingChapters)
             .Concat(due)
             .Concat(late)

@@ -1,0 +1,86 @@
+@page "/lms/assignment-templates"
+@attribute [Authorize]
+@inherits LmsPage
+
+<PageTitle>بانک الگوی تکلیف</PageTitle>
+<div class="lms">
+    <header class="lms-head"><h1>بانک خصوصی الگوی تکلیف</h1><p>الگو مستقل از فصل و جلسه است؛ موعد در زمان ساخت تکلیف در ارائهٔ واگذارشده تعیین می‌شود.</p></header>
+    <section class="lms-card">
+        <div class="lms-row">
+            <label>جستجو<input type="search" @bind="_search" maxlength="80" /></label>
+            <MudButton OnClick="Search" Disabled="@Busy">جستجو</MudButton>
+            @if (_authorized)
+            { <MudButton OnClick="New" Disabled="@Busy" Variant="Variant.Filled" Color="Color.Primary">الگوی تازه</MudButton> }
+        </div>
+        @if (Error is not null && !_editor) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+        <AppDataTable TRow="AssignmentTemplateRow" Items="@_rows" RowKey="@(r => r.Id)" Caption="نسخه‌های الگو" Loading="@Busy">
+            <Columns><th scope="col">عنوان</th><th scope="col">نسخه</th><th scope="col">سقف / تلاش</th><th scope="col">اقدام</th></Columns>
+            <RowCells Context="row">
+                <td><strong>@row.Title</strong><br /><small class="lms-muted"><bdi>@DateText(row.CreatedUtc)</bdi></small></td>
+                <td>@Fa(row.Number)</td><td>@Fa(row.MaxScore) / @Fa(row.MaxAttempts)</td>
+                <td><MudButton Disabled="@Busy" OnClick="() => Open(row)">مشاهده و ساخت نسخهٔ بعد</MudButton></td>
+            </RowCells>
+        </AppDataTable>
+        @if (_page > 1 || _more)
+        {
+            <div class="lms-row">
+                <MudButton Disabled="@(Busy || _page <= 1)" OnClick="Previous">صفحهٔ قبل</MudButton>
+                <span>صفحهٔ @Fa(_page)</span>
+                <MudButton Disabled="@(Busy || !_more)" OnClick="Next">صفحهٔ بعد</MudButton>
+            </div>
+        }
+    </section>
+</div>
+<AppFormModal TModel="AssignmentTemplateForm" Model="@_form" @bind-Visible="_editor" Title="@(_form.Previous is null ? "الگوی تازه" : "ثبت نسخهٔ بعدی الگو")"
+              Error="@Error" Busy="@Busy" OnValidSave="Save" Width="MaxWidth.Medium">
+    <ChildContent Context="form">
+        <div class="lms">
+            <label>عنوان<InputText @bind-Value="form.Title" maxlength="180" /></label>
+            <label>شرح تکلیف<InputTextArea @bind-Value="form.Prompt" maxlength="16000" /></label>
+            <label>معیار تصحیح<InputTextArea @bind-Value="form.Rubric" maxlength="8000" /></label>
+            <div class="lms-grid">
+                <label>سقف پایه<InputNumber @bind-Value="form.MaxScore" min="0.01" max="1000" step="0.01" /></label>
+                <label>تعداد تلاش<InputNumber @bind-Value="form.MaxAttempts" min="1" max="20" /></label>
+            </div>
+        </div>
+    </ChildContent>
+</AppFormModal>
+
+@code {
+    private sealed class AssignmentTemplateForm
+    {
+        public Guid? Previous { get; init; }
+        [Required(ErrorMessage = "عنوان لازم است.")] public string Title { get; set; } = "";
+        [Required(ErrorMessage = "شرح تکلیف لازم است.")] public string Prompt { get; set; } = "";
+        public string? Rubric { get; set; }
+        public int MaxAttempts { get; set; } = 1;
+        public decimal MaxScore { get; set; } = 20;
+    }
+    private AssignmentTemplateForm _form = new();
+    private AssignmentTemplateRow[] _rows = [];
+    private string _search = "", _currentSearch = "";
+    private int _page = 1;
+    private bool _authorized, _editor, _more;
+    protected override Task OnInitializedAsync() => Search();
+    private Task Search() => Run(async () => { _currentSearch = _search; await Load(1); });
+    private Task Next() => Run(() => Load(_page + 1));
+    private Task Previous() => Run(() => Load(_page - 1));
+    private async Task Load(int page)
+    {
+        var batch = await Get<AssignmentTemplateRow[]>($"assignment-templates?page={page}&search={Q(_currentSearch)}");
+        _rows = batch.Take(24).ToArray(); _more = batch.Length > 24; _page = page; _authorized = true;
+    }
+    private void New() { _form = new(); _editor = true; }
+    private void Open(AssignmentTemplateRow row)
+    {
+        _form = new() { Previous = row.Id, Title = row.Title, Prompt = row.Prompt, Rubric = row.Rubric,
+            MaxAttempts = row.MaxAttempts, MaxScore = row.MaxScore };
+        _editor = true;
+    }
+    private Task Save(AssignmentTemplateForm form) => Run(async () =>
+    {
+        _ = await Post<Guid>("assignment-templates", new AssignmentTemplateInput(form.Previous, form.Title, form.Prompt,
+            form.Rubric, form.MaxAttempts, form.MaxScore));
+        _editor = false; _search = _currentSearch = ""; await Load(1);
+    }, "نسخهٔ تازهٔ الگو ثبت شد.");
+}

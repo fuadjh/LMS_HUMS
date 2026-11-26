@@ -34,6 +34,11 @@ public static class LmsRegistration
         services.AddScoped<ILmsEnrollment>(p => p.GetRequiredService<LmsEnrollments>());
         services.AddScoped<LmsGrading>();
         services.AddScoped<ILmsGrading>(p => p.GetRequiredService<LmsGrading>());
+        services.AddScoped<IAssignmentQueries, AssignmentQueries>();
+        services.AddScoped<IAssignmentCommands, AssignmentCommands>();
+        services.AddScoped<CourseDiscussionAccess>();
+        services.AddScoped<ICourseDiscussionQueries, CourseDiscussionQueries>();
+        services.AddScoped<ICourseDiscussionCommands, CourseDiscussionCommands>();
         services.AddScoped<LmsCalendar>();
         services.AddScoped<ILmsCalendar>(p => p.GetRequiredService<LmsCalendar>());
         services.AddScoped<ILmsOperations, LmsOperations>();

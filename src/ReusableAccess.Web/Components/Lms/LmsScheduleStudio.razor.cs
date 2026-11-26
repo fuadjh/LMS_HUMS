@@ -78,7 +78,9 @@ public partial class LmsScheduleStudio
             _start = LocalText(prior.ClassesStartDate);
             _mode = prior.Mode;
             _origin = prior.OriginOfferingId;
-            foreach (var edit in prior.Overrides) _overrides[(edit.Key, edit.Field)] = edit;
+            var keys = (_version?.Content.Chapters ?? []).SelectMany(c => c.Lessons.Select(l => l.Key).Append(c.Key)).ToHashSet();
+            foreach (var edit in prior.Overrides.Where(e => e.Field != ScheduleField.Due && (e.Key == Guid.Empty || keys.Contains(e.Key))))
+                _overrides[(edit.Key, edit.Field)] = edit;
             // Re-evaluate after reopening, preserving explicit overrides if source/term changed.
         }
         _step = 2;
@@ -142,7 +144,7 @@ public partial class LmsScheduleStudio
     });
     private void AskApply(bool publish) => Ask(publish ? "اعمال و انتشار" : "اعمال بدون انتشار",
         publish ? "محتوا و تاریخ‌های تأییدشده در یک عملیات ثبت و منتشر می‌شوند. هیچ دانشجویی خودکار اخذ نمی‌کند."
-                : "فصل، درسک و ارزیابی ساخته می‌شوند ولی منتشر نمی‌شوند. ادامهٔ انتشار از نمای ارائه انجام می‌شود.", () => Apply(publish));
+                : "فصل و درسک ساخته می‌شوند ولی منتشر نمی‌شوند. ادامهٔ انتشار از نمای ارائه انجام می‌شود.", () => Apply(publish));
     private Task Apply(bool publish) => Run(async () =>
     {
         if (!Ready || _draft is not { } draft || _preview is not { } view) return;

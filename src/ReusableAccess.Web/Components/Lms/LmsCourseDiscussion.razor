@@ -1,0 +1,61 @@
+@inherits LmsPage
+
+<section class="lms-card">
+    <div class="ra-lms-section-head">
+        <div><h2>گفتگوی همین درس</h2><p class="lms-muted">پیام‌ها برای اعضای مجاز همین گروه‌اند؛ گفتگوی ورودی مسیر جدا دارد.</p></div>
+        <div class="lms-row">
+            <MudButton Disabled="@Busy" OnClick="Refresh">به‌روزرسانی</MudButton>
+            @if (_room?.CanPost == true)
+            { <MudButton Disabled="@Busy" OnClick="Compose" Color="Color.Primary" Variant="Variant.Filled">پیام تازه</MudButton> }
+        </div>
+    </div>
+    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+    @if (Error is not null && !_compose) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    @if (_room is { } room)
+    {
+        <div class="lms-chat-list" aria-label="پیام‌های درس" aria-live="polite">
+            @foreach (var message in room.Rows)
+            {
+                <article class="lms-chat-item @(message.Mine ? "mine" : "")" @key="message.Id">
+                    <strong>@message.Sender @(message.ByInstructor ? "· مدرس" : "")</strong>
+                    <small class="lms-muted"> · <bdi>@DateText(message.SentUtc)</bdi></small>
+                    <p class="lms-plain">@message.Text</p>
+                </article>
+            }
+            @if (room.Rows.Length == 0) { <p>پیامی برای این گروه ثبت نشده است.</p> }
+        </div>
+        @if (_page > 1 || room.HasMore)
+        {
+            <div class="lms-row">
+                @if (_page > 1) { <MudButton Disabled="@Busy" OnClick="Newer">پیام‌های جدیدتر</MudButton> }
+                @if (room.HasMore) { <MudButton Disabled="@Busy" OnClick="Older">پیام‌های قدیمی‌تر</MudButton> }
+            </div>
+        }
+    }
+</section>
+<LmsDialog @bind-Visible="_compose" Title="پیام در گفتگوی درسی" Error="@Error" Busy="@Busy" OnSave="Send" SaveText="ارسال پیام">
+    <label>متن پیام<textarea @bind="_text" maxlength="2000"></textarea></label>
+    <p class="lms-muted">در این بخش پیوست یا ارسال خصوصی وجود ندارد.</p>
+</LmsDialog>
+
+@code {
+    [Parameter, EditorRequired] public Guid OfferingId { get; set; }
+    [Parameter, EditorRequired] public string View { get; set; } = "student";
+    private string Root => $"offerings/{OfferingId:D}/discussion?view={View}";
+    private CourseDiscussionPage? _room;
+    private int _page;
+    private bool _compose;
+    private string _text = "";
+    protected override Task OnParametersSetAsync() => Refresh();
+    private Task Refresh() => Run(() => Load(1));
+    private Task Newer() => Run(() => Load(_page - 1));
+    private Task Older() => Run(() => Load(_page + 1));
+    private async Task Load(int number)
+    { _room = await Get<CourseDiscussionPage>($"{Root}&page={number}"); _page = number; }
+    private void Compose() { _text = ""; _compose = true; }
+    private Task Send() => Run(async () =>
+    {
+        _ = await Post<Guid>(Root, new CourseDiscussionPost(_text));
+        _compose = false; _text = ""; await Load(1);
+    }, "پیام ثبت شد.");
+}

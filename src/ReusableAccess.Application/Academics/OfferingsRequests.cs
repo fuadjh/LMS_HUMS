@@ -7,7 +7,7 @@ namespace ReusableAccess.Application.Academics;
 public interface ILmsOfferings
 {
     Task<OfferingRow[]> ListAsync(OfferingFilter filter, CancellationToken ct);
-    Task<OfferingDetails> GetAsync(Guid offeringId, string view, CancellationToken ct);
+    Task<OfferingDetails> GetAsync(Guid offeringId, string view, bool includeContent, CancellationToken ct);
     Task<Guid> SaveAsync(OfferingEdit input, CancellationToken ct);
     Task<Guid> CoTeachAsync(Guid offeringId, CoTeacherEdit input, CancellationToken ct);
     Task<bool> ScheduleAsync(Guid offeringId, ScheduleEdit input, CancellationToken ct);
@@ -20,7 +20,7 @@ public interface ILmsOfferings
 }
 
 public sealed record GetOfferingsQuery(OfferingFilter Filter) : IRequest<OfferingRow[]>;
-public sealed record GetOfferingQuery(Guid OfferingId, string View) : IRequest<OfferingDetails>;
+public sealed record GetOfferingQuery(Guid OfferingId, string View, bool IncludeContent = true) : IRequest<OfferingDetails>;
 public sealed record SaveOfferingCommand(OfferingEdit Input) : IRequest<Guid>, IConcurrencyConflictRequest;
 public sealed record SetCoTeacherCommand(Guid OfferingId, CoTeacherEdit Input) : IRequest<Guid>, IConcurrencyConflictRequest;
 public sealed record ScheduleOfferingCommand(Guid OfferingId, ScheduleEdit Input) : IRequest<bool>, IConcurrencyConflictRequest;
@@ -40,7 +40,7 @@ public sealed class GetOfferingsQueryHandler(ILmsOfferings feature) : IRequestHa
 public sealed class GetOfferingQueryHandler(ILmsOfferings feature) : IRequestHandler<GetOfferingQuery, OfferingDetails>
 {
     public Task<OfferingDetails> Handle(GetOfferingQuery request, CancellationToken ct)
-        => feature.GetAsync(request.OfferingId, request.View, ct);
+        => feature.GetAsync(request.OfferingId, request.View, request.IncludeContent, ct);
 }
 
 public sealed class SaveOfferingCommandHandler(ILmsOfferings feature) : IRequestHandler<SaveOfferingCommand, Guid>

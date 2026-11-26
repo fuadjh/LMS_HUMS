@@ -1,0 +1,16 @@
+<span class="lms-pill @Tone">@Label</span>
+
+@code {
+    [Parameter] public AssignmentStatus Status { get; set; }
+    private string Label => Status switch
+    {
+        AssignmentStatus.Open => "مهلت باز", AssignmentStatus.Extended => "مهلت تمدید شد",
+        AssignmentStatus.Expired => "پایان مهلت", AssignmentStatus.Upcoming => "هنوز آغاز نشده",
+        AssignmentStatus.Archived => "بایگانی‌شده", _ => "پیش‌نویس"
+    };
+    private string Tone => Status switch
+    {
+        AssignmentStatus.Open => "lms-ok", AssignmentStatus.Extended or AssignmentStatus.Upcoming => "lms-warn",
+        AssignmentStatus.Expired => "lms-bad", _ => ""
+    };
+}

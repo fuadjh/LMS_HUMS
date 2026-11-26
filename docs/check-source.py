@@ -26,29 +26,34 @@ infra = src / 'ReusableAccess.Infrastructure'
 mig = infra / 'Persistence/Migrations'
 v1 = (mig / '20261121203400_AddUniversityLms.cs').read_text()
 v2 = (mig / '20261125090000_AddLmsStudio.cs').read_text()
-model = (infra / 'Academics/AcademicModel.cs').read_text()
+v3 = (mig / '20261126093000_SeparateOfferingWorkspace.cs').read_text()
+model = '\n'.join((infra / f'Academics/{name}.cs').read_text() for name in ('AcademicModel', 'OfferingWorkspaceModel'))
 frozen1 = (mig / 'AcademicSchemaV1.cs').read_text()
 frozen2 = (mig / 'AcademicStudioSchemaV2.cs').read_text()
+frozen3 = (mig / 'AcademicWorkspaceSchemaV3.cs').read_text()
 snapshot = (mig / 'ApplicationDbContextModelSnapshot.cs').read_text(encoding='utf-8-sig')
 read_classes = lambda name: set(re.findall(r'public sealed class (\w+)', (domain / name).read_text()))
 read_tables = lambda text: set(re.findall(r'CreateTable\(\s*name: "(\w+)", schema: "lms"', text))
 read_models = lambda text: set(re.findall(r'b.ToTable\("(\w+)", "lms"\);', text))
 assert read_classes('AcademicEntities.cs') == read_tables(v1) == read_models(frozen1)
 assert read_classes('StudioEntities.cs') == read_tables(v2) == read_models(frozen2) == {'OfferingScheduleDraft', 'TemplateVersionMedia'}
-assert read_models(model) == read_tables(v1) | read_tables(v2)
-fks = re.findall(r'AddForeignKey\([^;]+;', v1 + v2)
+assert read_classes('OfferingWorkspaceEntities.cs') == read_tables(v3)
+assert read_models(model) == read_tables(v1) | read_tables(v2) | read_tables(v3) == read_models(frozen3)
+fks = re.findall(r'AddForeignKey\([^;]+;', v1 + v2 + v3)
 assert fks and all('ReferentialAction.NoAction' in x for x in fks)
-assert len(fks) == model.count('OnDelete(DeleteBehavior.NoAction)') == (frozen1 + frozen2).count('OnDelete(DeleteBehavior.NoAction)')
+expected_fks = len(re.findall(r'AddForeignKey\([^;]+;', v1 + v2)) + len(re.findall(r'^        Link\(', v3, re.M)) - v3.count('DropForeignKey(')
+assert expected_fks == model.count('OnDelete(DeleteBehavior.NoAction)') == frozen3.count('OnDelete(DeleteBehavior.NoAction)')
 assert 'HasFilter("[EndedUtc] IS NULL")' in model and 'unique: true, filter: "[EndedUtc] IS NULL"' in v1
-assert 'AcademicStudioSchemaV2.Build(modelBuilder)' in snapshot and 'AcademicSchemaV1.Build(model)' in frozen2
+assert 'AcademicWorkspaceSchemaV3.Build(modelBuilder)' in snapshot and 'AcademicSchemaV1.Build(model)' in frozen2
 assert all(op not in v1 + v2 for op in ('DropTable', 'DropColumn', 'DeleteData'))
-print(f'PASS: {len(read_models(model))} tables in V1/V2, {len(fks)} NO ACTION FKs; static snapshot wiring only')
+assert all(op not in v3 for op in ('DropTable', 'DropColumn', 'DeleteData'))
+print(f'PASS: {len(read_models(model))} tables in V1–V3, {expected_fks} NO ACTION FKs; static snapshot wiring only')
 
-api = '\n'.join((src / f'ReusableAccess.Api/Academics/{name}Endpoints.cs').read_text() for name in ('Lms', 'Studio'))
+api = '\n'.join((src / f'ReusableAccess.Api/Academics/{name}Endpoints.cs').read_text() for name in ('Lms', 'Studio', 'OfferingWorkspace'))
 registered = re.findall(r'r.Map(Get|Post|Put)\("(/[^"]+)"', api)
 assert len(registered) == len(set(registered))
 assert all('WithName(' in chunk for chunk in re.split(r'\br.Map(Get|Post|Put)\(', api)[1:] if chunk not in ('Get', 'Post', 'Put'))
-assert 'RequireAuthorization("AccessApi")' in api and 'r.MapLmsStudio();' in api
+assert 'RequireAuthorization("AccessApi")' in api and 'r.MapLmsStudio();' in api and 'r.MapOfferingWorkspace();' in api
 assert 'WithMetadata(new RequestSizeLimitAttribute(UploadLimits.FileBytes))' in api
 handler_types = set(re.findall(r'public sealed record (\w+(?:Query|Command))\(', '\n'.join(p.read_text() for p in app)))
 endpoint_types = set(re.findall(r'new (\w+(?:Query|Command))\(', api))

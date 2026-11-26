@@ -4,7 +4,7 @@
 
 <PageTitle>تقویم آموزشی</PageTitle>
 <div class="@(View == "teacher" ? "lms lms-teacher" : "lms")">
-    <header class="lms-head"><h1>تقویم جلالی @(View == "teacher" ? "استاد" : "دانشجو")</h1><p>جلسه‌ها، موعد تکلیف و پایان حذف‌واضافه · تهران</p><a href="/lms" style="color:white">میز کار</a></header>
+    <header class="lms-head"><h1>تقویم جلالی @(View == "teacher" ? "استاد" : "دانشجو")</h1><p>بازه‌های آموزشی، موعد تکلیف و پایان حذف‌واضافه · تهران</p><a href="/lms" style="color:white">میز کار</a></header>
     @if (Error is not null && !_open && !_noticesOpen) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
     @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
     <div class="lms-grid">
@@ -29,16 +29,24 @@
             </div>
         </section>
         <section class="lms-card">
-            <h2>یادآوری‌ها</h2><p class="lms-muted">جلسه‌ها و مهلت‌های نزدیک، پس از ثبت توسط برنامه در این بخش ظاهر می‌شوند.</p>
+            <h2>یادآوری‌ها</h2><p class="lms-muted">مهلت‌های آتی از رسید دریافت پاسخ جدا هستند.</p>
             <div class="lms-row"><span class="lms-pill">@Fa(_notices.Count(x => !x.Read)) اعلان خوانده‌نشده</span><MudButton OnClick="OpenNotices" Disabled="@Busy">نمایش اعلان‌ها</MudButton></div>
-            @foreach (var item in _entries.Where(x => x.AtUtc >= DateTimeOffset.UtcNow).Take(6))
+            @if (View == "teacher")
+            {
+                <h3 class="mt-3">پاسخ‌های دریافت‌شده در ماه</h3>
+                @foreach (var receipt in _entries.Where(x => x.Kind == "assignment-received").OrderByDescending(x => x.AtUtc).Take(6))
+                { <p><a class="lms-file" href="@EventLink(receipt)">@receipt.Title</a> · <bdi>@DateText(receipt.AtUtc)</bdi></p> }
+                @if (!_entries.Any(x => x.Kind == "assignment-received")) { <p class="lms-muted">در این ماه رویداد دریافت پاسخ ثبت نشده است.</p> }
+                <p class="lms-muted">عدد کنار عنوان، سقف همان ارسال است؛ نه نمرهٔ تصحیح‌شده.</p>
+            }
+            @foreach (var item in _entries.Where(x => x.AtUtc >= DateTimeOffset.UtcNow && x.Kind != "assignment-received").Take(6))
             { <p><span class="lms-pill">@Kind(item.Kind)</span> @item.Title <bdi>@DateText(item.AtUtc)</bdi></p> }
         </section>
     </div>
 </div>
 <LmsDialog @bind-Visible="_open" Title="@($"رویدادهای {Fa(_picked)} {Months[_month - 1]}")" Error="@Error">
     @foreach (var e in ForDay(_picked))
-    { <article class="lms-card my-2"><h3>@e.Title</h3><p>@Kind(e.Kind) · <bdi>@DateText(e.AtUtc)</bdi></p><a class="lms-file" href="@($"/lms/offer/{e.OfferingId:D}/{View}")">ارائه</a></article> }
+    { <article class="lms-card my-2"><h3>@e.Title</h3><p>@Kind(e.Kind) · <bdi>@DateText(e.AtUtc)</bdi></p><a class="lms-file" href="@EventLink(e)">ارائه</a></article> }
     @if (ForDay(_picked).Length == 0) { <p>رویدادی ثبت نشده است.</p> }
 </LmsDialog>
 <LmsDialog @bind-Visible="_noticesOpen" Title="اعلان‌های شخصی" Busy="@Busy" Error="@Error" Lead="«پذیرش درگاه» تحویل به گوشی را تأیید نمی‌کند. اعلان داخلی مستقل از پیامک است.">
@@ -95,6 +103,8 @@
     private Task OpenNotices() => Run(async () => { await LoadNotices(); _noticesOpen = true; });
     private async Task LoadNotices() => _notices = await Get<NoticeRow[]>("notices");
     private Task Mark(Guid id) => Run(async () => { _ = await Post<bool>($"notices/{id:D}/read"); await LoadNotices(); }, "اعلان خوانده شد.");
-    private static string Kind(string k) => k switch { "session" => "بازشدن جلسه", "chapter-open" => "بازشدن فصل", "assessment-open" => "بازشدن ارزیابی", "due" => "موعد ارزیابی", "cutoff" => "پایان ارسال دیرهنگام", "add-drop" => "پایان حذف‌واضافه", _ => k };
+    private string EventLink(CalendarEntry e) => $"/lms/offer/{e.OfferingId:D}/{View}" +
+        (e.AssessmentId is { } id ? $"?tab=assignments&assessment={id:D}" : "");
+    private static string Kind(string k) => k switch { "assignment-received" => "دریافت پاسخ", "chapter-open" => "بازشدن فصل", "assessment-open" => "بازشدن ارزیابی", "due" => "موعد ارزیابی", "cutoff" => "پایان پذیرش", "add-drop" => "پایان حذف‌واضافه", _ => k };
     private static string Sms(string s) => s switch { "GatewayAccepted" => "درگاه پذیرفت", "GatewayRejected" => "درگاه رد کرد", "NotConfigured" => "پیکربندی نشده", "UnverifiedPhone" => "موبایل تأیید نشده", "Unknown" => "نامعلوم", "KeyUnavailable" => "کلید در دسترس نیست", "Missed" => "مهلت گذشته", _ => "در انتظار" };
 }

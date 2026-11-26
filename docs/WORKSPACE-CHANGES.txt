@@ -1,0 +1,76 @@
+LMS_HUMS — changed file paths
+Source: supplied LMS_HUMS-master (1).zip (b306a67f6b96d60693151fd1830d480e1cfd0fa4)
+Method: compare paths and SHA-256 per file with the supplied archive; not a Git checkout diff. All docs are included.
+Baseline 476 files • Candidate 507 files
+Added 32 • Modified 37 • Deleted 1 • Total changed paths 70
+
+A	docs/LMS-WORKSPACE.fa.md
+A	docs/WORKSPACE-CHANGES.txt
+A	docs/check-workspace.py
+A	src/ReusableAccess.Api/Academics/OfferingWorkspaceEndpoints.cs
+A	src/ReusableAccess.Application/Academics/OfferingWorkspaceRequests.cs
+A	src/ReusableAccess.Contracts/Academics/OfferingWorkspaceContracts.cs
+A	src/ReusableAccess.Domain/Academics/AssignmentPolicies.cs
+A	src/ReusableAccess.Domain/Academics/OfferingWorkspaceEntities.cs
+A	src/ReusableAccess.Infrastructure/Academics/AssessmentQuiz.cs
+A	src/ReusableAccess.Infrastructure/Academics/AssignmentCommands.cs
+A	src/ReusableAccess.Infrastructure/Academics/AssignmentQueries.cs
+A	src/ReusableAccess.Infrastructure/Academics/CourseDiscussion.cs
+A	src/ReusableAccess.Infrastructure/Academics/OfferingWorkspaceModel.cs
+A	src/ReusableAccess.Infrastructure/Persistence/Migrations/20261126093000_SeparateOfferingWorkspace.Designer.cs
+A	src/ReusableAccess.Infrastructure/Persistence/Migrations/20261126093000_SeparateOfferingWorkspace.cs
+A	src/ReusableAccess.Infrastructure/Persistence/Migrations/AcademicWorkspaceSchemaV3.cs
+A	src/ReusableAccess.Web/Academics/LmsLayoutRoutes.cs
+A	src/ReusableAccess.Web/Components/Layout/LmsAdminLayout.razor
+A	src/ReusableAccess.Web/Components/Layout/LmsEntryLayout.razor
+A	src/ReusableAccess.Web/Components/Layout/LmsInstructorLayout.razor
+A	src/ReusableAccess.Web/Components/Layout/LmsRoleShell.razor
+A	src/ReusableAccess.Web/Components/Layout/LmsStudentLayout.razor
+A	src/ReusableAccess.Web/Components/Lms/AssignmentStatusBadge.razor
+A	src/ReusableAccess.Web/Components/Lms/LmsAssignmentTemplates.razor
+A	src/ReusableAccess.Web/Components/Lms/LmsAssignmentWorkspace.razor
+A	src/ReusableAccess.Web/Components/Lms/LmsCourseDiscussion.razor
+A	src/ReusableAccess.Web/Components/Ui/AppActionModal.razor
+A	src/ReusableAccess.Web/Components/Ui/AppDataTable.razor
+A	src/ReusableAccess.Web/Components/Ui/AppDataTable.razor.css
+A	src/ReusableAccess.Web/wwwroot/css/lms-workspace.css
+A	tests/ReusableAccess.Domain.Tests/Academics/AssignmentPoliciesTests.cs
+A	tests/ReusableAccess.Infrastructure.Tests/Academics/OfferingWorkspaceUpgradeTests.cs
+M	README.fa.md
+M	docs/DEPLOY.fa.md
+M	docs/check-source.py
+M	src/ReusableAccess.Api/Academics/LmsEndpoints.cs
+M	src/ReusableAccess.Application/Academics/OfferingsRequests.cs
+M	src/ReusableAccess.Contracts/Academics/LmsContracts.cs
+M	src/ReusableAccess.Domain/Academics/AcademicEntities.cs
+M	src/ReusableAccess.Domain/Academics/AcademicRules.cs
+M	src/ReusableAccess.Domain/Academics/StudioEntities.cs
+M	src/ReusableAccess.Infrastructure/Academics/AcademicModel.cs
+M	src/ReusableAccess.Infrastructure/Academics/LmsCalendar.cs
+M	src/ReusableAccess.Infrastructure/Academics/LmsEnrollments.cs
+M	src/ReusableAccess.Infrastructure/Academics/LmsGrading.cs
+M	src/ReusableAccess.Infrastructure/Academics/LmsOfferings.cs
+M	src/ReusableAccess.Infrastructure/Academics/LmsRegistration.cs
+M	src/ReusableAccess.Infrastructure/Academics/LmsTemplates.cs
+M	src/ReusableAccess.Infrastructure/Academics/StudioDocuments.cs
+M	src/ReusableAccess.Infrastructure/Academics/StudioMaterializer.cs
+M	src/ReusableAccess.Infrastructure/Academics/StudioScheduling.cs
+M	src/ReusableAccess.Infrastructure/Persistence/Migrations/ApplicationDbContextModelSnapshot.cs
+M	src/ReusableAccess.Web/Academics/LmsPage.cs
+M	src/ReusableAccess.Web/Academics/StudioEditorModel.cs
+M	src/ReusableAccess.Web/Components/App.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsCalendarPage.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsDashboard.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsDialog.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsOffering.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsOfferingList.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsOfferingScheduleView.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsScheduleGrid.razor
+M	src/ReusableAccess.Web/Components/Lms/LmsScheduleStudio.razor.cs
+M	src/ReusableAccess.Web/Components/Lms/LmsTemplateEditor.razor
+M	src/ReusableAccess.Web/Components/Routes.razor
+M	tests/ReusableAccess.Domain.Tests/Academics/AcademicRulesTests.cs
+M	tests/ReusableAccess.Domain.Tests/Academics/AcademicScheduleTests.cs
+M	tests/ReusableAccess.Infrastructure.Tests/Academics/LmsPersistenceTests.cs
+M	tests/ReusableAccess.Infrastructure.Tests/Academics/StudioPersistenceTests.cs
+D	src/ReusableAccess.Web/Components/Lms/LmsStudioAssessmentEditor.razor

@@ -54,10 +54,8 @@
                 <div class="lms-row">
                     <MudButton OnClick="() => Move(model.Chapters, chapter, -1)" Disabled="@(Busy || model.Chapters.IndexOf(chapter) == 0)">فصل به بالا</MudButton>
                     <MudButton OnClick="() => Move(model.Chapters, chapter, 1)" Disabled="@(Busy || model.Chapters.IndexOf(chapter) == model.Chapters.Count - 1)">فصل به پایین</MudButton>
-                    <MudButton OnClick="() => RemoveChapter(chapter)" Disabled="@(Busy || chapter.Lessons.Count != 0 || chapter.Assessments.Count != 0)" Color="Color.Error">حذف فصل خالی</MudButton>
+                    <MudButton OnClick="() => RemoveChapter(chapter)" Disabled="@(Busy || chapter.Lessons.Count != 0)" Color="Color.Error">حذف فصل خالی</MudButton>
                     <MudButton OnClick="() => AddLesson(chapter)" Disabled="@Busy">افزودن درسک</MudButton>
-                    <MudButton OnClick="() => AddAssessment(chapter, null, false)" Disabled="@Busy">تکلیف مستقل فصل</MudButton>
-                    <MudButton OnClick="() => AddAssessment(chapter, null, true)" Disabled="@Busy">آزمون مستقل فصل</MudButton>
                 </div>
                 @foreach (var lesson in chapter.Lessons)
                 {
@@ -76,8 +74,6 @@
                             <MudButton OnClick="() => AskRemove(chapter, lesson)" Disabled="@Busy" Color="Color.Error">برداشتن درسک</MudButton>
                         </div>
                         <div class="lms-row">
-                            <MudButton OnClick="() => AddAssessment(chapter, lesson, false)" Disabled="@(Busy || HasAssessment(chapter, lesson, false))">تکلیف این درسک</MudButton>
-                            <MudButton OnClick="() => AddAssessment(chapter, lesson, true)" Disabled="@(Busy || HasAssessment(chapter, lesson, true))">آزمون این درسک</MudButton>
                         </div>
                         <h3>پیوست‌ها (به ترتیب نمایش)</h3>
                         @foreach (var fileId in lesson.Files)
@@ -117,11 +113,21 @@
                         }
                     </details>
                 }
-                @if (chapter.Assessments.Count > 0) { <h3>ارزیابی‌های فصل</h3> }
-                @foreach (var assessment in chapter.Assessments)
+                @if (chapter.LegacyAssessments.Length > 0)
                 {
-                    <LmsStudioAssessmentEditor @key="assessment.Key" Model="@assessment" Lessons="@LessonChoices(chapter)" Disabled="@Busy"
-                        Remove="() => RemoveAssessment(chapter, assessment)" Changed="MarkDirty" />
+                    <details class="my-2">
+                        <summary>ارزیابی‌های بایگانی‌شدهٔ این نسخه (@Fa(chapter.LegacyAssessments.Length))</summary>
+                        <p class="lms-muted">در نسخهٔ قبلی محفوظ‌اند؛ با اعمال یا ذخیرهٔ محتوای جدید کپی نمی‌شوند. برای استفاده از صورت تکلیف، از بانک مستقل نسخهٔ تازه بسازید.</p>
+                        @foreach (var old in chapter.LegacyAssessments)
+                        {
+                            <article class="lms-card my-2" @key="old.Key">
+                                <h3>@old.Title</h3><p class="lms-plain">@old.Prompt</p>
+                                @if (!string.IsNullOrWhiteSpace(old.Rubric)) { <p class="lms-plain">@old.Rubric</p> }
+                                <small>از @Fa(old.MaxScore) · @Fa(old.MaxAttempts) تلاش</small>
+                            </article>
+                        }
+                        <a class="lms-file" href="/lms/assignment-templates">بانک الگوی تکلیف</a>
+                    </details>
                 }
             </details>
         }
@@ -135,7 +141,7 @@
     }
 </div>
 <AppConfirmDialog @bind-Visible="_leave" Title="خروج بدون ذخیره" Message="تغییرهای این ویرایش هنوز نسخه نشده‌اند." OnConfirm="Leave" />
-<AppConfirmDialog @bind-Visible="_remove" Title="برداشتن درسک" Message="این درسک و ارزیابی‌های وابسته فقط از نسخهٔ تازه کنار گذاشته می‌شوند."
+<AppConfirmDialog @bind-Visible="_remove" Title="برداشتن درسک" Message="این درسک فقط از نسخهٔ تازه کنار گذاشته می‌شود."
                   OnConfirm="RemoveLesson" ConfirmText="برداشتن درسک" />
 
 @code {
@@ -192,30 +198,17 @@
     private void AddChapter() { _model?.Chapters.Add(StudioChapterForm.Fresh()); MarkDirty(); }
     private void RemoveChapter(StudioChapterForm c)
     {
-        if (c.Lessons.Count == 0 && c.Assessments.Count == 0) { _model?.Chapters.Remove(c); MarkDirty(); }
+        if (c.Lessons.Count == 0) { _model?.Chapters.Remove(c); MarkDirty(); }
     }
     private void AddLesson(StudioChapterForm c) { c.Lessons.Add(StudioLessonForm.Fresh(c.StartDay)); MarkDirty(); }
     private void AskRemove(StudioChapterForm c, StudioLessonForm l) { _deleteChapter = c; _deleteLesson = l; _remove = true; }
     private void RemoveLesson()
     {
         if (_deleteChapter is not { } c || _deleteLesson is not { } l) return;
-        c.Assessments.RemoveAll(a => a.LessonKey == l.Key);
         c.Lessons.Remove(l);
         _remove = false;
         MarkDirty();
     }
-    private void AddAssessment(StudioChapterForm c, StudioLessonForm? l, bool quiz)
-    {
-        if (l is not null && HasAssessment(c, l, quiz)) return;
-        var a = StudioAssessmentForm.Fresh(l?.Key, quiz);
-        var start = l?.StartDay ?? c.StartDay;
-        if (start is { } day && day + 7 <= (c.EndDay ?? AcademicSchedule.MaxOffsetDays)) a.DueDay = day + 7;
-        c.Assessments.Add(a);
-        MarkDirty();
-    }
-    private static bool HasAssessment(StudioChapterForm c, StudioLessonForm l, bool quiz) => c.Assessments.Any(a => a.LessonKey == l.Key && a.IsQuiz == quiz);
-    private void RemoveAssessment(StudioChapterForm chapter, StudioAssessmentForm assessment) { chapter.Assessments.Remove(assessment); MarkDirty(); }
-    private static CatalogRow[] LessonChoices(StudioChapterForm c) => c.Lessons.Select(l => new CatalogRow(l.Key, l.Title)).ToArray();
     private bool HasVideo(StudioLessonForm l) => _model is { } m && l.Files.Any(id => m.Files.GetValueOrDefault(id)?.Extension == ".mp4");
     private void RemoveFile(StudioLessonForm lesson, Guid id) { lesson.Files.Remove(id); if (!HasVideo(lesson)) lesson.Cover = null; MarkDirty(); }
     private void ClearCover(StudioLessonForm lesson) { lesson.Cover = null; MarkDirty(); }

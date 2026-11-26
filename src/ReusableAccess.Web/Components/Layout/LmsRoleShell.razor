@@ -1,0 +1,123 @@
+@using ReusableAccess.Web.Academics
+@inject ConsoleApi Api
+@inject AuthenticationStateProvider Authentication
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
+
+<MudRTLProvider RightToLeft="true">
+    <MudThemeProvider Theme="@_theme" IsDarkMode="@_dark" ObserveSystemDarkModeChange="false" />
+    <MudPopoverProvider />
+    <MudDialogProvider />
+    <MudSnackbarProvider />
+    <div class="ra-lms-shell" data-role="@EffectiveMode" data-theme="@(_dark ? "dark" : "light")" dir="rtl">
+        <div class="ra-lms-wrap">
+            <header class="ra-lms-top">
+                <a class="ra-lms-brand" href="@HomeUrl">
+                    <span class="ra-lms-brand-mark"><MudIcon Icon="@Icons.Material.Filled.School" /></span>
+                    <span><strong>سامانه یادگیری</strong><small>@(Configuration["Lms:UniversityName"] ?? "دانشگاه علوم پزشکی")</small></span>
+                </a>
+                @if (EffectiveMode != "entry") { <span class="ra-lms-role-tag">پنل @LmsLayoutRoutes.Label(EffectiveMode)</span> }
+                <div class="ra-lms-user">
+                    @if (RoleLabel is { } label) { <small class="ra-lms-user-label">@label</small> }
+                    <MudIconButton Icon="@(_dark ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                                   aria-label="تغییر حالت روشن و تیره" OnClick="ToggleTheme" />
+                    <AccountMenu />
+                </div>
+            </header>
+            <div class="ra-lms-body">
+                <aside class="ra-lms-sidebar">
+                    <small class="ra-lms-sidebar-title">@(EffectiveMode == "entry" ? "ناوبری آموزشی" : "ناوبری پنل " + LmsLayoutRoutes.Label(EffectiveMode))</small>
+                    <nav aria-label="ناوبری اصلی آموزشی">
+                        @foreach (var item in AllowedLinks())
+                        {
+                            <NavLink class="ra-lms-navlink" Match="NavLinkMatch.All" href="@item.Url" @key="item.Url">
+                                <MudIcon Icon="@item.Icon" Size="Size.Small" /><span>@item.Text</span>
+                            </NavLink>
+                        }
+                    </nav>
+                    @if (_home is { } home && LmsLayoutRoutes.Available(home).Count > 1)
+                    {
+                        <nav aria-label="تغییر پنل آموزشی" class="ra-lms-switch">
+                            <small>پنل‌های مجاز دیگر</small>
+                            @foreach (var mode in LmsLayoutRoutes.Available(home).Where(r => r != EffectiveMode))
+                            { <NavLink class="ra-lms-navlink" href="@($"/lms/panel/{mode}")">پنل @LmsLayoutRoutes.Label(mode)</NavLink> }
+                        </nav>
+                    }
+                </aside>
+                <main class="ra-lms-main">
+                    <UiFlashNotice />
+                    @if (_error is not null) { <MudAlert Severity="Severity.Warning" Variant="Variant.Text">@_error</MudAlert> }
+                    <CascadingValue Name="LmsMode" Value="@EffectiveMode">
+                        @ChildContent
+                    </CascadingValue>
+                </main>
+            </div>
+        </div>
+    </div>
+</MudRTLProvider>
+<div id="blazor-error-ui" data-nosnippet>
+    ارتباط قطع شد یا خطایی رخ داد.
+    <a href="." class="reload">بارگذاری دوباره</a><span class="dismiss">×</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Mode { get; set; } = "entry";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private readonly MudTheme _theme = AppTheme.Create();
+    private LmsHome? _home;
+    private bool _dark;
+    private string? _error;
+    private string EffectiveMode => _home is not { } home ? "entry" : Mode == "entry"
+        ? LmsLayoutRoutes.Available(home).FirstOrDefault() ?? "entry" : LmsLayoutRoutes.Allowed(home, Mode) ? Mode : "entry";
+    private string HomeUrl => EffectiveMode == "entry" ? "/lms" : $"/lms/panel/{EffectiveMode}";
+    private string? RoleLabel => EffectiveMode switch { "teacher" => _home?.TeacherLabel, "student" => _home?.StudyLabel, _ => null };
+    private sealed record Link(string Text, string Url, string Icon, string? Permission = null, bool Platform = false, bool Review = false);
+
+    private IEnumerable<Link> AllowedLinks()
+    {
+        yield return new("نمای کلی", HomeUrl, Icons.Material.Filled.Home);
+        if (_home is not { } home) yield break;
+        Link[] choices = EffectiveMode switch
+        {
+            "admin" => [new("دانشکده‌ها و نیم‌سال", "/lms/admin/catalog", Icons.Material.Filled.School, LmsPermissions.CatalogRead),
+                        new("استادان و دانشجویان", "/lms/admin/people", Icons.Material.Filled.Group, LmsPermissions.PeopleRead),
+                        new("ارائه‌ها و گروه‌ها", "/lms/offerings/admin", Icons.Material.Filled.List, LmsPermissions.Assign),
+                        new("قلمروهای آموزشی", "/lms/admin/grants", Icons.Material.Filled.Security, LmsPermissions.Grant, true),
+                        new("عملیات سامانه", "/lms/admin/operations", Icons.Material.Filled.Settings, LmsPermissions.Logs, true),
+                        new("نقش‌ها و مجوزها", "/console/roles", Icons.Material.Filled.ManageAccounts, LmsPermissions.Grant, true)],
+            "teacher" => [new("دروس تحت تدریس", "/lms/offerings/teacher", Icons.Material.Filled.List, LmsPermissions.Teach),
+                          new("بانک الگوی محتوا", "/lms/templates", Icons.Material.Filled.Book, LmsPermissions.Template),
+                          new("بانک الگوی تکلیف", "/lms/assignment-templates", Icons.Material.Filled.Assignment, LmsPermissions.Template),
+                          new("صف بررسی تکالیف", "/lms/panel/teacher#review", Icons.Material.Filled.Assignment, LmsPermissions.Teach, Review: true),
+                          new("تقویم استاد", "/lms/calendar/teacher", Icons.Material.Filled.Event, LmsPermissions.Calendar)],
+            "student" => [new("دروس ارائه‌شده", "/lms/offerings/student", Icons.Material.Filled.List, LmsPermissions.Learn),
+                          new("تقویم و اعلان‌ها", "/lms/calendar/student", Icons.Material.Filled.Event, LmsPermissions.Calendar),
+                          new("کارنامهٔ غیررسمی", "/lms/transcript", Icons.Material.Filled.Assignment, LmsPermissions.Learn),
+                          new("گفتگوی ورودی", "/lms/chat", Icons.Material.Filled.Chat, LmsPermissions.Chat)],
+            _ => []
+        };
+        foreach (var link in choices.Where(c => (!c.Platform || home.PlatformAdmin) && (c.Permission is null || home.Permissions.Contains(c.Permission)) &&
+            (!c.Review || home.Permissions.Contains(LmsPermissions.Grade) || home.Permissions.Contains(LmsPermissions.Release))))
+            yield return link;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if ((await Authentication.GetAuthenticationStateAsync()).User.Identity?.IsAuthenticated != true) return;
+        try { _home = await Api.GetAsync<LmsHome>("api/lms/me"); }
+        catch (ConsoleApiException ex) { _error = ex.Message; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { _dark = await JS.InvokeAsync<bool>("raUi.getDark"); await InvokeAsync(StateHasChanged); }
+        catch (Exception ex) when (ex is JSDisconnectedException || ex is JSException) { }
+    }
+    private async Task ToggleTheme()
+    {
+        _dark = !_dark;
+        try { await JS.InvokeVoidAsync("raUi.setDark", _dark); }
+        catch (Exception ex) when (ex is JSDisconnectedException || ex is JSException) { }
+    }
+}

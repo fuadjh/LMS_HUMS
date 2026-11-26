@@ -272,15 +272,16 @@ internal static class AcademicModel
             b.HasKey(x => x.Id);
             b.Property(x => x.Id).HasColumnType("uniqueidentifier").ValueGeneratedNever();
             b.Property(x => x.ChapterId).HasColumnType("uniqueidentifier");
-            b.Property(x => x.SessionId).HasColumnType("uniqueidentifier");
+            // Legacy data columns are intentionally not foreign keys and are never consulted by content logic.
+            b.Property<Guid?>("SessionId").HasColumnType("uniqueidentifier");
+            b.Property<DateTimeOffset?>("LegacyVisibleFromUtc").HasColumnType("datetimeoffset");
+            b.Property(x => x.NeedsAvailabilityReview).HasColumnType("bit").HasDefaultValue(false);
             b.Property(x => x.Title).HasColumnType("nvarchar(180)").HasMaxLength(180).IsRequired();
             b.Property(x => x.Body).HasColumnType("nvarchar(max)").IsRequired();
             b.Property(x => x.Position).HasColumnType("int");
             b.Property(x => x.Active).HasColumnType("bit");
             b.HasIndex(x => new { x.ChapterId, x.Position }).IsUnique();
-            b.HasIndex(x => x.SessionId);
             b.HasOne<Chapter>().WithMany().HasForeignKey(x => x.ChapterId).OnDelete(DeleteBehavior.NoAction);
-            b.HasOne<LessonSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.NoAction);
             b.Property(x => x.VisibleFromUtc).HasColumnType("datetimeoffset");
             b.Property(x => x.VisibleUntilUtc).HasColumnType("datetimeoffset");
             b.Property(x => x.TemplateItemKey).HasColumnType("uniqueidentifier");
@@ -309,7 +310,11 @@ internal static class AcademicModel
             b.ToTable("Assessment", "lms");
             b.HasKey(x => x.Id);
             b.Property(x => x.Id).HasColumnType("uniqueidentifier").ValueGeneratedNever();
-            b.Property(x => x.ChapterId).HasColumnType("uniqueidentifier");
+            b.Property(x => x.OfferingId).HasColumnType("uniqueidentifier");
+            b.Property<Guid?>("ChapterId").HasColumnType("uniqueidentifier");
+            b.Property<Guid?>("LessonId").HasColumnType("uniqueidentifier");
+            b.Property<Guid?>("TemplateItemKey").HasColumnType("uniqueidentifier");
+            b.Property<DateTimeOffset?>("LegacyOpensUtc").HasColumnType("datetimeoffset");
             b.Property(x => x.Title).HasColumnType("nvarchar(180)").HasMaxLength(180).IsRequired();
             b.Property(x => x.Prompt).HasColumnType("nvarchar(max)").IsRequired();
             b.Property(x => x.Rubric).HasColumnType("nvarchar(max)").IsRequired();
@@ -319,14 +324,16 @@ internal static class AcademicModel
             b.Property(x => x.MaxScore).HasColumnType("decimal(9,2)");
             b.Property(x => x.QuizSpec).HasColumnType("nvarchar(max)");
             b.Property(x => x.Active).HasColumnType("bit");
-            b.HasIndex(x => x.ChapterId);
-            b.HasOne<Chapter>().WithMany().HasForeignKey(x => x.ChapterId).OnDelete(DeleteBehavior.NoAction);
-            b.Property(x => x.LessonId).HasColumnType("uniqueidentifier");
             b.Property(x => x.OpensUtc).HasColumnType("datetimeoffset");
-            b.Property(x => x.TemplateItemKey).HasColumnType("uniqueidentifier");
-            b.HasIndex(x => new { x.ChapterId, x.TemplateItemKey }).IsUnique().HasFilter("[TemplateItemKey] IS NOT NULL");
-            b.HasIndex(x => new { x.ChapterId, x.LessonId });
-            b.HasOne<Lesson>().WithMany().HasForeignKey(x => new { x.ChapterId, x.LessonId }).HasPrincipalKey(x => new { x.ChapterId, x.Id }).OnDelete(DeleteBehavior.NoAction);
+            b.Property(x => x.PublishedUtc).HasColumnType("datetimeoffset");
+            b.Property(x => x.VisibleUntilUtc).HasColumnType("datetimeoffset");
+            b.Property(x => x.ExtensionPenalty).HasColumnType("decimal(9,2)");
+            b.Property(x => x.TemplateVersionId).HasColumnType("uniqueidentifier");
+            b.Property(x => x.Revision).HasColumnType("uniqueidentifier").HasDefaultValueSql("NEWID()").IsConcurrencyToken();
+            b.HasIndex(x => new { x.OfferingId, x.Active, x.DueUtc });
+            b.HasIndex(x => x.TemplateVersionId);
+            b.HasOne<Offering>().WithMany().HasForeignKey(x => x.OfferingId).OnDelete(DeleteBehavior.NoAction);
+            b.HasOne<AssignmentTemplateVersion>().WithMany().HasForeignKey(x => x.TemplateVersionId).OnDelete(DeleteBehavior.NoAction);
         });
         model.Entity<Enrollment>(b =>
         {
@@ -384,6 +391,10 @@ internal static class AcademicModel
             b.Property(x => x.IsLate).HasColumnType("bit");
             b.Property(x => x.Body).HasColumnType("nvarchar(max)").IsRequired();
             b.Property(x => x.QuizAnswers).HasColumnType("nvarchar(max)");
+            b.Property(x => x.ScoreLimit).HasColumnType("decimal(9,2)");
+            b.Property(x => x.RequestId).HasColumnType("uniqueidentifier");
+            b.Property(x => x.RequestHash).HasColumnType("varchar(64)").HasMaxLength(64);
+            b.HasIndex(x => new { x.AssessmentId, x.EnrollmentId, x.RequestId }).IsUnique().HasFilter("[RequestId] IS NOT NULL");
             b.HasIndex(x => new { x.AssessmentId, x.EnrollmentId, x.Attempt }).IsUnique();
             b.HasIndex(x => x.EnrollmentId);
             b.HasOne<Assessment>().WithMany().HasForeignKey(x => x.AssessmentId).OnDelete(DeleteBehavior.NoAction);
@@ -574,5 +585,6 @@ internal static class AcademicModel
             b.HasOne<TemplateVersion>().WithMany().HasForeignKey(x => x.TemplateVersionId).OnDelete(DeleteBehavior.NoAction);
             b.HasOne<Media>().WithMany().HasForeignKey(x => x.MediaId).OnDelete(DeleteBehavior.NoAction);
         });
+        OfferingWorkspaceModel.Configure(model);
     }
 }

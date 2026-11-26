@@ -40,9 +40,6 @@ public static class AcademicRules
     public static bool CanSee(DateTimeOffset now, DateTimeOffset? published, DateTimeOffset? visible)
         => published is not null && visible is not null && visible.Value <= now;
 
-    public static bool CanReadLesson(DateTimeOffset now, DateTimeOffset? chapterPublished, DateTimeOffset? sessionOpens)
-        => chapterPublished is not null && sessionOpens is not null && sessionOpens.Value <= now;
-
     public static DateTimeOffset? Later(DateTimeOffset? first, DateTimeOffset? second)
         => first is null ? second : second is null || first.Value >= second.Value ? first : second;
 
@@ -52,13 +49,12 @@ public static class AcademicRules
     public static bool CanReadChapter(DateTimeOffset now, Chapter chapter)
         => chapter.Active && chapter.PublishedUtc is not null && Inside(now, chapter.VisibleFromUtc, chapter.VisibleUntilUtc);
 
-    public static bool CanReadLesson(DateTimeOffset now, Chapter chapter, Lesson lesson, LessonSession? session)
-        => lesson.Active && lesson.ChapterId == chapter.Id && session is { Active: true } && session.OfferingId == chapter.OfferingId &&
-           CanReadChapter(now, chapter) && session.OpensUtc <= now && Inside(now, lesson.VisibleFromUtc, lesson.VisibleUntilUtc);
+    public static bool CanReadLesson(DateTimeOffset now, Chapter chapter, Lesson lesson)
+        => lesson.Active && !lesson.NeedsAvailabilityReview && lesson.ChapterId == chapter.Id &&
+           CanReadChapter(now, chapter) && Inside(now, lesson.VisibleFromUtc, lesson.VisibleUntilUtc);
 
-    // Closing a lesson does not close its linked assessment. The containing chapter still gates access.
-    public static bool CanReadAssessment(DateTimeOffset now, Chapter chapter, Assessment assessment)
-        => assessment.Active && assessment.ChapterId == chapter.Id && CanReadChapter(now, chapter) && Inside(now, assessment.OpensUtc, null);
+    public static DateTimeOffset? Earlier(DateTimeOffset? first, DateTimeOffset? second)
+        => first is null ? second : second is null || first.Value <= second.Value ? first : second;
 
 }
 

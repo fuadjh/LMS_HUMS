@@ -31,21 +31,17 @@ public sealed record OfferingRow(Guid Id, Guid CourseId, Guid TermId, Guid LeadI
     DateTimeOffset? PublishedUtc, Guid[] CohortIds, bool Active, bool Closed, Guid? EnrollmentId, EnrollmentStatus? Status,
     bool CanEnroll, bool CanWithdraw, DateTimeOffset DropClosesUtc);
 public sealed record ScheduleEdit(DateTimeOffset VisibleUtc);
-public sealed record SectionEdit(Guid? Id, Guid? ParentId, string Title, int Position = 1, Guid? SessionId = null,
-    string? Body = null, string? Rubric = null, DateTimeOffset? OpensUtc = null, DateTimeOffset? DueUtc = null,
-    DateTimeOffset? CutoffUtc = null, int MaxAttempts = 1, decimal MaxScore = 20, bool Active = true, QuizQuestionRow[]? Quiz = null);
+public sealed record SectionEdit(Guid? Id, Guid? ParentId, string Title, int Position = 1,
+    string? Body = null, DateTimeOffset? OpensUtc = null, DateTimeOffset? ClosesUtc = null, bool Active = true);
 public sealed record FileRow(Guid Id, string Name, long Bytes, string Extension);
-public sealed record LessonRow(Guid Id, string Title, int Position, Guid? SessionId, DateTimeOffset? OpensUtc, string? Body,
+public sealed record LessonRow(Guid Id, string Title, int Position, DateTimeOffset? OpensUtc, string? Body,
     bool CanRead, bool Completed, bool Active, FileRow[] Files, string? Summary = null, DateTimeOffset? ClosesUtc = null,
-    Guid? CoverMediaId = null, Guid? TemplateItemKey = null);
-public sealed record ChapterRow(Guid Id, string Title, int Position, DateTimeOffset? PublishedUtc, bool Active, LessonRow[] Lessons, AssessmentRow[] Assessments,
+    Guid? CoverMediaId = null, Guid? TemplateItemKey = null, bool NeedsAvailabilityReview = false,
+    DateTimeOffset? OwnOpensUtc = null, DateTimeOffset? OwnClosesUtc = null);
+public sealed record ChapterRow(Guid Id, string Title, int Position, DateTimeOffset? PublishedUtc, bool Active, LessonRow[] Lessons,
     DateTimeOffset? OpensUtc = null, DateTimeOffset? ClosesUtc = null, Guid? TemplateItemKey = null);
-public sealed record SessionRow(Guid Id, string Title, DateTimeOffset OpensUtc, bool Active);
-public sealed record AssessmentRow(Guid Id, Guid ChapterId, string Title, string? Prompt, string? Rubric,
-    DateTimeOffset? DueUtc, DateTimeOffset? CutoffUtc, int MaxAttempts, decimal MaxScore, bool Active, QuizQuestionRow[]? Quiz = null,
-    Guid? LessonId = null, DateTimeOffset? OpensUtc = null, bool CanRead = true, bool IsQuiz = false, Guid? TemplateItemKey = null);
 public sealed record QuizQuestionRow(string Prompt, string[] Choices, int? CorrectIndex = null);
-public sealed record OfferingDetails(OfferingRow Offering, ChapterRow[] Chapters, SessionRow[] Sessions, CoTeacherRow[] CoTeachers,
+public sealed record OfferingDetails(OfferingRow Offering, ChapterRow[] Chapters, CoTeacherRow[] CoTeachers,
     bool TeacherEditor, bool CanPublish, bool CanGrade, bool CanRelease, bool Lead, bool ReadOnly);
 public sealed record TemplateSave(Guid? TemplateId, string Title);
 public sealed record TemplateApply(Guid VersionId);
@@ -56,12 +52,12 @@ public sealed record EnrollmentChange(Guid Id, EnrollmentStatus Status, bool Cha
 public sealed record RosterRow(Guid EnrollmentId, string Name, string StudyLabel, string Number, EnrollmentStatus Status, bool CanRemove);
 public sealed record GradeEdit(decimal Score, string? Feedback, bool Publish = false);
 public sealed record GradeRow(int Revision, decimal Score, string Feedback, bool Published, DateTimeOffset CreatedUtc);
-public sealed record AttemptInput(string? Text, Guid[]? FileIds, int[]? Answers = null);
+public sealed record AttemptInput(string? Text, Guid[]? FileIds, int[]? Answers = null, Guid? RequestId = null);
 public sealed record AttemptRow(Guid Id, Guid EnrollmentId, string? Student, int Attempt, DateTimeOffset SentUtc,
-    bool Late, string Text, FileRow[] Files, GradeRow[] Grades);
+    bool Late, string Text, FileRow[] Files, GradeRow[] Grades, decimal? ScoreLimit = null);
 public sealed record TranscriptRow(Guid EnrollmentId, Guid OfferingId, string Course, string Group, string Term,
     EnrollmentStatus Status, DateTimeOffset ChangedUtc, GradeRow? UnofficialGrade);
-public sealed record CalendarEntry(Guid OfferingId, Guid EventId, string Kind, string Title, DateTimeOffset AtUtc);
+public sealed record CalendarEntry(Guid OfferingId, Guid EventId, string Kind, string Title, DateTimeOffset AtUtc, Guid? AssessmentId = null);
 public sealed record NoticeRow(Guid Id, string Title, string Kind, DateTimeOffset AtUtc, DateTimeOffset CreatedUtc, bool Read, string SmsState);
 public sealed record ChatPeer(Guid Id, string Name);
 public sealed record ChatPost(Guid? RecipientId, string Text);

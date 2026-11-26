@@ -22,6 +22,8 @@ public sealed partial class LmsPersistenceTests
 {
     private const string Baseline = "20261103062810_CompleteAdminIdentity";
     private const string AddLms = "20261121203400_AddUniversityLms";
+    private const string AddStudio = "20261125090000_AddLmsStudio";
+    private const string AddWorkspace = "20261126093000_SeparateOfferingWorkspace";
     private static string? Sql => Environment.GetEnvironmentVariable("RA_SQLSERVER_TEST_CONNECTION") ??
         Environment.GetEnvironmentVariable("REUSABLEACCESS_TEST_SQLSERVER");
 
@@ -33,7 +35,8 @@ public sealed partial class LmsPersistenceTests
         options.UseSqlServer(noConnect).UseOpenIddict<Guid>();
         using var db = new ApplicationDbContext(options.Options);
         Assert.Contains(AddLms, db.Database.GetMigrations());
-        Assert.Contains("20261125090000_AddLmsStudio", db.Database.GetMigrations());
+        Assert.Contains(AddStudio, db.Database.GetMigrations());
+        Assert.Contains(AddWorkspace, db.Database.GetMigrations());
         Assert.False(db.Database.HasPendingModelChanges());
         foreach (var type in db.Model.GetEntityTypes().Where(t => t.GetSchema() == "lms"))
         foreach (var fk in type.GetForeignKeys()) Assert.Equal(DeleteBehavior.NoAction, fk.DeleteBehavior);
@@ -46,6 +49,7 @@ public sealed partial class LmsPersistenceTests
     {
         await db.Database.MigrateAsync();
         Assert.Contains(AddLms, await db.Database.GetAppliedMigrationsAsync());
+        Assert.Contains(AddWorkspace, await db.Database.GetAppliedMigrationsAsync());
         Assert.False(await db.Set<Enrollment>().AnyAsync());
     });
 
@@ -90,13 +94,12 @@ public sealed partial class LmsPersistenceTests
             var offer = new Offering { CourseId = course.Id, LeadId = teacher.Id, TermId = t.Id, Active = true, GroupCode = "1", OwnerMajorId = m.Id,
                 Audience = OfferingAudience.Specialized, PublishedUtc = clock.Now.AddDays(-1), VisibleUtc = clock.Now.AddDays(-1) };
             var chapter = new Chapter { OfferingId = offer.Id, Title = "فصل", Position = 1, PublishedUtc = clock.Now, Active = true };
-            var session = new LessonSession { OfferingId = offer.Id, OpensUtc = clock.Now, Title = "جلسه", Active = true };
-            var lesson = new Lesson { ChapterId = chapter.Id, SessionId = session.Id, Position = 1, Title = "درسک", Active = true };
-            var task = new Assessment { ChapterId = chapter.Id, Title = "تکلیف", Prompt = "متن", MaxScore = 20, MaxAttempts = 2,
+            var lesson = new Lesson { ChapterId = chapter.Id, Position = 1, Title = "درسک", Active = true };
+            var task = new Assessment { OfferingId = offer.Id, PublishedUtc = clock.Now, Title = "تکلیف", Prompt = "متن", MaxScore = 20, MaxAttempts = 2,
                 DueUtc = clock.Now.AddHours(3), CutoffUtc = clock.Now.AddHours(5), Active = true };
             var study = new StudyRecord { StudentId = actor.Id, CohortId = c.Id, Number = "fixture-1", OpenedUtc = clock.Now.AddDays(-10) };
             var otherStudy = new StudyRecord { StudentId = stranger.Id, CohortId = c.Id, Number = "fixture-2", OpenedUtc = clock.Now.AddDays(-10) };
-            db.AddRange(actor, stranger, teacher, admin, scoped, f, outside, m, p, c, t, profile, course, offer, chapter, session, lesson, task,
+            db.AddRange(actor, stranger, teacher, admin, scoped, f, outside, m, p, c, t, profile, course, offer, chapter, lesson, task,
                 new StudentProfile { Id = actor.Id, Active = true }, new StudentProfile { Id = stranger.Id, Active = true }, study, otherStudy,
                 new AcademicGrant { UserId = scoped.Id, FacultyId = outside.Id, Active = true });
             await db.SaveChangesAsync(); db.ChangeTracker.Clear();

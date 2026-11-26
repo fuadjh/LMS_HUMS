@@ -23,7 +23,7 @@ internal sealed partial class LmsOfferings
         var template = input.TemplateId is { } id ? await studioTemplates.Own(id, true, ct)
             : new CourseTemplate { OwnerId = access.ActorId, CourseId = info.Course.Id, Title = title, Active = true };
         if (template.CourseId != info.Course.Id) throw LmsError.Missing();
-        var content = await ChapterRows(offeringId, null, true, true, data.Now, ct);
+        var content = await ChapterRows(offeringId, null, true, data.Now, ct);
         if (!content.Any(x => x.Active)) throw LmsError.Conflict("ارائه فصل فعال برای ذخیره ندارد.");
         // Only reuse item keys when the offering's receipt proves it belongs to this template family.
         var hasLineage = await (from d in data.Read<OfferingScheduleDraft>()
@@ -40,23 +40,14 @@ internal sealed partial class LmsOfferings
         StudioChapter Convert(ChapterRow chapter)
         {
             var stored = hasLineage ? prior?.Chapters.FirstOrDefault(c => c.Key == chapter.TemplateItemKey) : null;
-            var lessonKeys = new Dictionary<Guid, Guid>();
             var lessons = chapter.Lessons.Where(l => l.Active).Select(l =>
             {
                 var previous = stored?.Lessons.FirstOrDefault(x => x.Key == l.TemplateItemKey);
                 var key = previous?.Key ?? Guid.NewGuid();
-                lessonKeys.Add(l.Id, key);
                 return new StudioLesson(key, l.Title, l.Summary, l.Body, l.Position, previous?.StartDay, previous?.EndDay,
                     l.Files.Select(f => f.Id).ToArray(), l.CoverMediaId);
             }).ToArray();
-            var assessments = chapter.Assessments.Where(a => a.Active).Select(a =>
-            {
-                var previous = stored?.Assessments.FirstOrDefault(x => x.Key == a.TemplateItemKey);
-                var key = a.LessonId is { } lid && lessonKeys.TryGetValue(lid, out var linked) ? linked : (Guid?)null;
-                return new StudioAssessment(previous?.Key ?? Guid.NewGuid(), key, a.Title, a.Prompt, a.Rubric, a.MaxAttempts, a.MaxScore,
-                    a.Quiz is { Length: > 0 }, a.Quiz, previous?.StartDay, previous?.DueDay, previous?.EndDay);
-            }).ToArray();
-            return new(stored?.Key ?? Guid.NewGuid(), chapter.Title, chapter.Position, stored?.StartDay, stored?.EndDay, lessons, assessments);
+            return new(stored?.Key ?? Guid.NewGuid(), chapter.Title, chapter.Position, stored?.StartDay, stored?.EndDay, lessons, []);
         }
 
         if (input.TemplateId is null) data.Db.Add(template);

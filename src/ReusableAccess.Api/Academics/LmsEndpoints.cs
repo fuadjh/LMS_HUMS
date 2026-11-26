@@ -31,7 +31,8 @@ public static class LmsEndpoints
 
         r.MapGet("/offerings", (string view, Guid? termId, Guid? cohortId, bool? mine, string? search, ISender s, CancellationToken ct) =>
             Send(s, new GetOfferingsQuery(new(view, termId, cohortId, mine == true, search)), ct)).WithName("lms.offerings.read");
-        r.MapGet("/offerings/{id:guid}", (Guid id, string view, ISender s, CancellationToken ct) => Send(s, new GetOfferingQuery(id, view), ct)).WithName("lms.offering.read");
+        r.MapGet("/offerings/{id:guid}", (Guid id, string view, bool? includeContent, ISender s, CancellationToken ct) =>
+            Send(s, new GetOfferingQuery(id, view, includeContent ?? true), ct)).WithName("lms.offering.read");
         r.MapPost("/offerings", (OfferingEdit input, ISender s, CancellationToken ct) => Send(s, new SaveOfferingCommand(input), ct)).WithName("lms.offering.assign");
         r.MapPost("/offerings/{id:guid}/co-teachers", (Guid id, CoTeacherEdit input, ISender s, CancellationToken ct) => Send(s, new SetCoTeacherCommand(id, input), ct)).WithName("lms.offering.co-teacher");
         r.MapPost("/offerings/{id:guid}/schedule", (Guid id, ScheduleEdit input, ISender s, CancellationToken ct) => Send(s, new ScheduleOfferingCommand(id, input), ct)).WithName("lms.offering.schedule");
@@ -93,6 +94,7 @@ public static class LmsEndpoints
         r.MapPost("/sms", (SmsEdit input, ISender s, CancellationToken ct) => Send(s, new SaveLmsSmsSettingsCommand(input), ct))
             .RequireAuthorization("PlatformAdmin").WithName("lms.sms.write");
         r.MapLmsStudio();
+        r.MapOfferingWorkspace();
         return app;
     }
 }

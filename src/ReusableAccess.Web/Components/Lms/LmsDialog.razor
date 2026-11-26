@@ -1,14 +1,7 @@
-<AppModal Visible="@Visible" VisibleChanged="OnVisible" Title="@Title" Lead="@Lead" Error="@Error"
-          Width="MaxWidth.Medium" CssClass="lms-dialog" Busy="@(Busy || _saving)" AllowEscape="@(!OnSave.HasDelegate)">
-    <ChildContent>@ChildContent</ChildContent>
-    <Actions>
-        <MudButton Disabled="@(Busy || _saving)" OnClick="() => OnVisible(false)">@(OnSave.HasDelegate ? "انصراف" : "بستن")</MudButton>
-        @if (OnSave.HasDelegate)
-        {
-            <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(Busy || _saving)" OnClick="Save">@SaveText</MudButton>
-        }
-    </Actions>
-</AppModal>
+<AppActionModal Visible="@Visible" VisibleChanged="VisibleChanged" Title="@Title" Lead="@Lead" Error="@Error"
+                SaveText="@SaveText" Busy="@Busy" OnSave="OnSave" Width="MaxWidth.Medium" CssClass="lms-dialog">
+    @ChildContent
+</AppActionModal>
 
 @code {
     [Parameter] public bool Visible { get; set; }
@@ -20,13 +13,4 @@
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
-    private bool _saving;
-    private Task OnVisible(bool v) => Busy || _saving ? Task.CompletedTask : VisibleChanged.InvokeAsync(v);
-    private async Task Save()
-    {
-        if (Busy || _saving || !OnSave.HasDelegate) return;
-        _saving = true;
-        try { await OnSave.InvokeAsync(); }
-        finally { _saving = false; }
-    }
 }

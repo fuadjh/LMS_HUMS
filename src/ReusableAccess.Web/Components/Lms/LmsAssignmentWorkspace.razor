@@ -1,0 +1,372 @@
+@inherits LmsPage
+
+@if (Busy) { <MudProgressLinear Indeterminate="true" /> }
+@if (Error is not null && !_editing && !_extending && !_confirm && !_attemptOpen)
+{ <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+@if (_detail is not { } assignment)
+{
+    <section class="lms-card">
+        <div class="ra-lms-section-head">
+            <div><h2>تکالیف و ارزیابی‌های ارائه</h2><p class="lms-muted">انتشار و موعدها مستقل از محتوای آموزشی‌اند.</p></div>
+            @if (_panel?.CanAuthor == true)
+            {
+                <div class="lms-row">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@Busy" OnClick="() => StartEditor()">تکلیف یا آزمون تازه</MudButton>
+                    @if (CanUseTemplates)
+                    { <MudButton Variant="Variant.Outlined" Disabled="@Busy" OnClick="FromTemplate">ساخت تکلیف از الگو</MudButton> }
+                </div>
+            }
+        </div>
+        @AssignmentTable(false)
+        @if (_panel?.Rows.Any(a => a.IsQuiz) == true)
+        {
+            <div class="mt-4">@AssignmentTable(true)</div>
+        }
+    </section>
+}
+else
+{
+    <div class="lms-stack">
+        <section class="lms-card">
+            <div class="ra-lms-section-head">
+                <div>
+                    <AssignmentStatusBadge Status="@assignment.Summary.Status" />
+                    <h2 class="mt-2">@assignment.Title</h2>
+                </div>
+                <div class="lms-row">
+                    <MudButton OnClick="Back" Disabled="@Busy">همهٔ تکالیف درس</MudButton>
+                    <MudButton OnClick="Refresh" Disabled="@Busy">به‌روزرسانی</MudButton>
+                    @if (assignment.CanEdit) { <MudButton Disabled="@Busy" OnClick="() => StartEditor(assignment)">ویرایش پیش‌نویس</MudButton> }
+                    @if (assignment.CanPublish) { <MudButton Disabled="@Busy" Color="Color.Primary" OnClick="AskPublish">انتشار</MudButton> }
+                    @if (assignment.CanExtend) { <MudButton Disabled="@Busy" Color="Color.Primary" Variant="Variant.Filled" OnClick="StartExtension">تمدید مهلت</MudButton> }
+                </div>
+            </div>
+            <dl class="ra-assignment-facts">
+                <div><dt>آغاز ارسال</dt><dd><bdi>@DateText(assignment.Summary.OpensUtc)</bdi></dd></div>
+                <div><dt>مرز مهلت اصلی</dt><dd><bdi>@DateText(assignment.Summary.DueUtc)</bdi></dd></div>
+                <div><dt>پایان پذیرش فعلی</dt><dd><bdi>@DateText(assignment.Summary.DeadlineUtc)</bdi></dd></div>
+                <div><dt>سقف پایه</dt><dd>@Fa(assignment.MaxScore) · @Fa(assignment.MaxAttempts) تلاش</dd></div>
+                @if (assignment.CurrentScoreLimit is { } limit)
+                { <div><dt>سقف ارسال در این لحظه</dt><dd>@Fa(limit)</dd></div> }
+                @if (assignment.ExtensionPenalty is { } penalty)
+                { <div><dt>کسر پس از مهلت اصلی</dt><dd>@Fa(penalty)</dd></div> }
+            </dl>
+            @if (!assignment.CanRead) { <p class="lms-muted">صورت ارزیابی در حال حاضر در دسترس نیست؛ سابقهٔ مجاز از موعد مستقل است.</p> }
+            @if (assignment.Prompt is not null) { <p class="lms-plain">@assignment.Prompt</p> }
+            @if (!string.IsNullOrWhiteSpace(assignment.Rubric))
+            { <details><summary>معیار تصحیح</summary><p class="lms-plain">@assignment.Rubric</p></details> }
+            @if (assignment.Extensions.Length != 0)
+            {
+                <details><summary>سابقهٔ تمدید و کسر نمره</summary>
+                    @foreach (var item in assignment.Extensions)
+                    { <p>ثبت <bdi>@DateText(item.RecordedUtc)</bdi> · پایان <bdi>@DateText(item.DeadlineUtc)</bdi> · کسر @Fa(item.Penalty)</p> }
+                    <p class="lms-muted">تمدید، سقف یا نمرهٔ پاسخ‌های قبلی را تغییر نمی‌دهد.</p>
+                </details>
+            }
+            @if (assignment.Quiz is { } quiz && (View is "teacher" or "preview"))
+            {
+                <details><summary>سؤال‌های آزمون</summary>
+                    @foreach (var question in quiz)
+                    { <p>@question.Prompt</p><ol>@foreach (var choice in question.Choices) { <li>@choice</li> }</ol> }
+                </details>
+            }
+        </section>
+        @if (assignment.CanSubmit && View == "student")
+        {
+            <section class="lms-card">
+                <h2>ارسال پاسخ</h2>
+                @if (assignment.Quiz is { } questions)
+                {
+                    @for (var i = 0; i < questions.Length; i++)
+                    {
+                        var index = i;
+                        <label>@Fa(i + 1). @questions[index].Prompt
+                            <select @bind="_answers[index]" @bind:after="FreshRequest" disabled="@Busy">
+                                <option value="-1">یک گزینه انتخاب کنید</option>
+                                @for (var j = 0; j < questions[index].Choices.Length; j++)
+                                { <option value="@j">@questions[index].Choices[j]</option> }
+                            </select>
+                        </label>
+                    }
+                }
+                else
+                {
+                    <label>متن پاسخ<textarea @bind="_answer" @bind:after="FreshRequest" maxlength="32000" disabled="@Busy"></textarea></label>
+                    @if (_home?.Permissions.Contains(LmsPermissions.SubmissionUpload) == true && _files.Count < 8)
+                    { <LmsUpload @key="assignment.Id" TargetId="@assignment.Id" Purpose="MediaPurpose.Submission" Uploaded="FileReady" /> }
+                    @foreach (var file in _files)
+                    { <p @key="file.Id">@file.Name · @Size(file.Bytes) <MudButton Disabled="@Busy" OnClick="() => Remove(file)">جداکردن</MudButton></p> }
+                }
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@Busy" OnClick="AskSubmit">ثبت تلاش تازه</MudButton>
+            </section>
+        }
+        @if (assignment.CanReadWork)
+        {
+            <section class="lms-card">
+                <AppDataTable TRow="AttemptRow" Items="@_work" RowKey="@(r => r.Id)" Loading="@Busy"
+                              Caption="@(View == "teacher" ? "پاسخ‌های دانشجویان" : "پاسخ‌های من")" EmptyText="پاسخی ثبت نشده است.">
+                    <Columns><th scope="col">ارسال</th><th scope="col">زمان دریافت</th><th scope="col">سقف</th><th scope="col">نمره</th><th scope="col">اقدام</th></Columns>
+                    <RowCells Context="attempt">
+                        <td>@attempt.Student · تلاش @Fa(attempt.Attempt)</td>
+                        <td><bdi>@DateText(attempt.SentUtc)</bdi> @(attempt.Late ? "· در مهلت تمدید" : "")</td>
+                        <td>@Fa(attempt.ScoreLimit ?? assignment.MaxScore)</td>
+                        <td>@(attempt.Grades.FirstOrDefault() is { } grade ? $"{Fa(grade.Score)} · {(grade.Published ? "منتشرشده" : "پیش‌نویس")}" : "در انتظار بررسی")</td>
+                        <td><MudButton Disabled="@Busy" OnClick="() => ShowAttempt(attempt)">جزئیات پاسخ</MudButton></td>
+                    </RowCells>
+                </AppDataTable>
+            </section>
+        }
+    </div>
+}
+
+<LmsDialog @bind-Visible="_editing" Title="@(_fromTemplate ? "ساخت تکلیف از الگو" : "پیش‌نویس ارزیابی مستقل")" Error="@Error" Busy="@Busy"
+           OnSave="SaveEditor" SaveText="ذخیرهٔ پیش‌نویس" Lead="تاریخ‌ها فقط به این تکلیف تعلق دارند؛ پیش از انتشار برای دانشجو نمایش داده نمی‌شود.">
+    @if (_fromTemplate)
+    {
+        <LmsChoice Label="نسخهٔ الگوی خصوصی" Options="@TemplateChoices" @bind-Value="_chosenTemplate" />
+        @if (_templateRows.Length > 24) { <MudButton Disabled="@Busy" OnClick="TemplatesNext">صفحهٔ بعد الگوها</MudButton> }
+        @if (_templatePage > 1) { <MudButton Disabled="@Busy" OnClick="TemplatesPrevious">صفحهٔ قبل الگوها</MudButton> }
+        <a class="lms-file" href="/lms/assignment-templates">بانک مستقل الگوها</a>
+    }
+    else
+    {
+        <label>عنوان<input @bind="_title" maxlength="180" /></label>
+        <label>صورت سؤال یا تکلیف<textarea @bind="_prompt" maxlength="16000"></textarea></label>
+        <label>معیار تصحیح<textarea @bind="_rubric" maxlength="8000"></textarea></label>
+        <div class="lms-grid">
+            <label>سقف پایه<input type="number" step="0.01" min="0.01" max="1000" @bind="_maxScore" /></label>
+            <label>تعداد تلاش<input type="number" min="1" max="20" @bind="_maxAttempts" /></label>
+        </div>
+        <label class="lms-inline"><input type="checkbox" @bind="_isQuiz" /> آزمون چهارگزینه‌ای</label>
+        @if (_isQuiz)
+        {
+            @foreach (var question in _questions)
+            {
+                <article class="lms-card my-2" @key="question">
+                    <label>صورت سؤال<textarea @bind="question.Prompt" maxlength="1000"></textarea></label>
+                    @for (var j = 0; j < 4; j++)
+                    { var index = j; <label>گزینهٔ @Fa(j + 1)<input @bind="question.Choices[index]" maxlength="500" /></label> }
+                    <label>گزینهٔ درست<select @bind="question.Correct"><option value="0">۱</option><option value="1">۲</option><option value="2">۳</option><option value="3">۴</option></select></label>
+                    <MudButton OnClick="() => RemoveQuestion(question)" Disabled="@Busy">برداشتن سؤال</MudButton>
+                </article>
+            }
+            <MudButton OnClick="AddQuestion" Disabled="@(Busy || _questions.Count >= 30)">سؤال تازه</MudButton>
+        }
+    }
+    <div class="lms-grid">
+        <PersianDateField Label="آغاز پذیرش (اختیاری)" @bind-Value="_opens" PreferredTime="@(new TimeOnly(8, 0))" Disabled="@Busy" />
+        <PersianDateField Label="مرز پایان مهلت اصلی" @bind-Value="_due" Disabled="@Busy" />
+    </div>
+    <p class="lms-muted">آغازِ بدون ساعت ۰۸:۰۰ تهران است؛ پایانِ بدون ساعت یعنی تا پیش از آغاز روز بعد.</p>
+    <label class="lms-inline"><input type="checkbox" @bind="_active" /> فعال</label>
+</LmsDialog>
+<LmsDialog @bind-Visible="_extending" Title="تمدید مهلت تکلیف" Error="@Error" Busy="@Busy" OnSave="Extend" SaveText="ثبت تمدید">
+    @if (_detail is { } current)
+    {
+        <p>مهلت اصلی <bdi>@DateText(current.Summary.DueUtc)</bdi> ثابت می‌ماند. سقف تازه فقط برای ارسال‌های تازه از این مرز اعمال می‌شود.</p>
+        <PersianDateField Label="پایان انحصاری مهلت جدید" @bind-Value="_deadline" Disabled="@Busy" />
+        <label>کسر نمره پس از مهلت اصلی<input type="number" min="0" max="@current.MaxScore" step="0.01" @bind="_penalty" /></label>
+        <p class="lms-muted">برای تمدید بدون کسر، ۰ وارد کنید. روز بدون ساعت یعنی تا پیش از آغاز روز بعد.</p>
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_attemptOpen" Title="جزئیات پاسخ و نمره" Error="@Error" Busy="@Busy">
+    @if (_picked is { } attempt)
+    {
+        <p>@attempt.Student · تلاش @Fa(attempt.Attempt) · <bdi>@DateText(attempt.SentUtc)</bdi></p>
+        <p>سقف ثبت این تلاش: @Fa(AttemptLimit(attempt))</p>
+        <p class="lms-plain">@attempt.Text</p>
+        @foreach (var file in attempt.Files)
+        { <p><a class="lms-file" href="@($"/bff/lms/files/{file.Id:D}")">@file.Name · @Size(file.Bytes)</a></p> }
+        @if (View == "teacher" && (CanGrade || CanRelease))
+        {
+            <label>نمره<input type="number" min="0" max="@AttemptLimit(attempt)" step="0.01" @bind="_score" /></label>
+            <label>بازخورد<textarea @bind="_feedback" maxlength="8000"></textarea></label>
+            <div class="lms-row">
+                @if (CanGrade) { <MudButton Disabled="@Busy" OnClick="DraftGrade">ذخیرهٔ پیش‌نویس</MudButton> }
+                @if (CanRelease) { <MudButton Disabled="@Busy" Color="Color.Primary" OnClick="AskRelease">انتشار نمره</MudButton> }
+            </div>
+        }
+        <details open><summary>نسخه‌های مجاز نمره</summary>
+            @foreach (var grade in attempt.Grades)
+            { <p>نسخه @Fa(grade.Revision) · @Fa(grade.Score) · @(grade.Published ? "منتشرشده" : "پیش‌نویس")</p><p class="lms-plain">@grade.Feedback</p> }
+            @if (attempt.Grades.Length == 0) { <p>نمره‌ای برای نمایش نیست.</p> }
+        </details>
+    }
+</LmsDialog>
+<LmsDialog @bind-Visible="_confirm" Title="@_confirmation" Lead="@_impact" Error="@Error" Busy="@Busy" OnSave="Confirm" SaveText="تأیید" />
+
+@code {
+    [Parameter, EditorRequired] public Guid OfferingId { get; set; }
+    [Parameter, EditorRequired] public string View { get; set; } = "student";
+    [Parameter] public Guid? InitialAssignmentId { get; set; }
+    [Parameter] public bool CanGrade { get; set; }
+    [Parameter] public bool CanRelease { get; set; }
+    [Parameter] public bool CanUseTemplates { get; set; }
+    private string Root => $"offerings/{OfferingId:D}/assignments";
+    private AssignmentPanel? _panel;
+    private AssessmentRow? _detail;
+    private AttemptRow[] _work = [];
+    private AttemptRow? _picked;
+    private LmsHome? _home;
+    private AssignmentTemplateRow[] _templateRows = [];
+    private int _templatePage = 1;
+    private CatalogRow[] TemplateChoices => _templateRows.Take(24).Select(t => new CatalogRow(t.Id, $"{t.Title} · نسخه {Fa(t.Number)}")).ToArray();
+    private Guid? _chosenTemplate, _editId, _revision;
+    private bool _editing, _extending, _fromTemplate, _confirm, _attemptOpen, _active, _isQuiz;
+    private string _title = "", _prompt = "", _rubric = "", _answer = "", _confirmation = "", _impact = "", _feedback = "";
+    private string? _opens, _due, _deadline;
+    private int _maxAttempts;
+    private decimal _maxScore, _penalty, _score;
+    private int[] _answers = [];
+    private Guid _requestId;
+    private readonly List<FileRow> _files = [];
+    private Func<Task>? _confirmed;
+    private sealed class QuestionEdit(string prompt, string[] choices, int correct)
+    {
+        public string Prompt { get; set; } = prompt;
+        public string[] Choices { get; } = choices;
+        public int Correct { get; set; } = correct;
+    }
+    private readonly List<QuestionEdit> _questions = [];
+    private void AddQuestion() => _questions.Add(new("", ["", "", "", ""], 0));
+    private void RemoveQuestion(QuestionEdit question) => _questions.Remove(question);
+    private AssignmentSummary[] Assignments(bool quiz) => _panel?.Rows.Where(x => x.IsQuiz == quiz).ToArray() ?? [];
+
+    private RenderFragment AssignmentTable(bool quiz) => @<AppDataTable TRow="AssignmentSummary" Caption="@(quiz ? "آزمون‌های چهارگزینه‌ای" : "تکالیف مستقل")"
+        Items="@Assignments(quiz)" RowKey="@(r => r.Id)" Loading="@Busy" EmptyText="تکلیف قابل نمایشی نیست.">
+        <Columns><th scope="col">عنوان</th><th scope="col">وضعیت</th><th scope="col">پایان پذیرش</th><th scope="col">اقدام</th></Columns>
+        <RowCells Context="row">
+            <td><strong>@row.Title</strong></td><td><AssignmentStatusBadge Status="@row.Status" /></td>
+            <td><bdi>@DateText(row.DeadlineUtc)</bdi></td><td><MudButton Disabled="@Busy" OnClick="() => Open(row.Id)">مشاهدهٔ جزئیات</MudButton></td>
+        </RowCells>
+    </AppDataTable>;
+
+    protected override Task OnParametersSetAsync() => Run(async () =>
+    {
+        _detail = null;
+        _editing = _extending = _confirm = _attemptOpen = false;
+        if (View == "student") _home = await Get<LmsHome>("me");
+        await Load();
+        if (InitialAssignmentId is { } id) await LoadDetail(id, true);
+    });
+    private async Task Load() => _panel = await Get<AssignmentPanel>($"{Root}?view={View}");
+    private Task Open(Guid id) => Run(() => LoadDetail(id, true));
+    private Task Refresh() => Run(async () => { if (_detail is { } a) await LoadDetail(a.Id, false); });
+    private Task Back() => Run(async () => { _detail = null; _picked = null; await Load(); });
+
+    private async Task LoadDetail(Guid id, bool reset)
+    {
+        var candidate = await Get<AssessmentRow>($"{Root}/{id:D}?view={View}");
+        var work = candidate.CanReadWork ? await Get<AttemptRow[]>($"assessments/{id:D}/work?view={View}") : [];
+        _detail = candidate;
+        _work = work;
+        if (reset || _answers.Length != (candidate.Quiz?.Length ?? 0))
+        {
+            _answer = ""; _files.Clear();
+            _answers = Enumerable.Repeat(-1, candidate.Quiz?.Length ?? 0).ToArray();
+            FreshRequest();
+        }
+    }
+    private void StartEditor(AssessmentRow? a = null)
+    {
+        _fromTemplate = false; _editId = a?.Id; _revision = a?.Revision; _chosenTemplate = null;
+        _title = a?.Title ?? ""; _prompt = a?.Prompt ?? ""; _rubric = a?.Rubric ?? "";
+        _opens = DateInput(a?.Summary.OpensUtc); _due = DateInput(a?.Summary.DueUtc);
+        _maxAttempts = a?.MaxAttempts ?? 1; _maxScore = a?.MaxScore ?? 20;
+        _active = a?.Summary.Status != AssignmentStatus.Archived; _isQuiz = a?.Summary.IsQuiz == true;
+        _questions.Clear();
+        foreach (var q in a?.Quiz ?? []) _questions.Add(new(q.Prompt, [.. q.Choices], q.CorrectIndex ?? 0));
+        _editing = true;
+    }
+    private Task FromTemplate() => Run(async () =>
+    {
+        await LoadTemplatePage(1);
+        if (_templateRows.Length == 0) throw new ArgumentException("ابتدا یک الگو در بانک مستقل تکلیف بسازید.");
+        StartEditor(); _fromTemplate = true;
+    });
+    private Task TemplatesNext() => Run(() => LoadTemplatePage(_templatePage + 1));
+    private Task TemplatesPrevious() => Run(() => LoadTemplatePage(_templatePage - 1));
+    private async Task LoadTemplatePage(int page)
+    {
+        _templateRows = await Get<AssignmentTemplateRow[]>($"assignment-templates?page={page}");
+        _templatePage = page; _chosenTemplate = null;
+    }
+    private Task SaveEditor() => Run(async () =>
+    {
+        if (_fromTemplate && !_chosenTemplate.HasValue) throw new ArgumentException("نسخهٔ الگو را انتخاب کنید.");
+        if (_isQuiz && _questions.Count == 0) throw new ArgumentException("برای آزمون دست‌کم یک سؤال ثبت کنید.");
+        var quiz = _isQuiz ? _questions.Select(q => new QuizQuestionRow(q.Prompt, q.Choices, q.Correct)).ToArray() : null;
+        var due = AvailabilityDate(_due, true) ?? throw new ArgumentException("پایان مهلت اصلی را وارد کنید.");
+        var id = await Post<Guid>(Root, new AssessmentEdit(_editId, _revision, _title, _prompt, _rubric,
+            AvailabilityDate(_opens), due, _maxAttempts, _maxScore, quiz, _chosenTemplate, _active));
+        _editing = false; await Load(); await LoadDetail(id, true);
+    }, "پیش‌نویس مستقل ثبت شد.");
+    private void AskPublish()
+    {
+        if (_detail is not { } a) return;
+        Ask("انتشار ارزیابی", "دانشجوی ثبت‌نام‌شده مطابق بازهٔ همین ارزیابی آن را می‌بیند؛ انتشار محتوا لازم نیست.", async () =>
+        {
+            _ = await Post<bool>($"{Root}/{a.Id:D}/publish", new PublishAssessmentInput(a.Revision));
+            await Load(); await LoadDetail(a.Id, false);
+            Snack.Add("ارزیابی منتشر شد.", Severity.Success);
+        });
+    }
+    private void StartExtension()
+    {
+        if (_detail is not { } a) return;
+        _deadline = null; _penalty = a.ExtensionPenalty ?? 0; _extending = true;
+    }
+    private Task Extend() => Run(async () =>
+    {
+        if (_detail is not { } a) return;
+        var end = AvailabilityDate(_deadline, true) ?? throw new ArgumentException("پایان مهلت تمدید لازم است.");
+        _ = await Post<Guid>($"{Root}/{a.Id:D}/extend", new ExtendAssignmentInput(a.Revision, end, _penalty));
+        _extending = false; await Load(); await LoadDetail(a.Id, false);
+    }, "مهلت تمدید شد؛ سوابق قبلی تغییر نکردند.");
+    private void FreshRequest() => _requestId = Guid.NewGuid();
+    private Task FileReady(FileRow file)
+    {
+        if (_files.Count < 8 && !_files.Any(f => f.Id == file.Id)) { _files.Add(file); FreshRequest(); }
+        return Task.CompletedTask;
+    }
+    private void Remove(FileRow file) { _files.Remove(file); FreshRequest(); }
+    private void AskSubmit()
+    {
+        if (_detail is not { CanSubmit: true } a) return;
+        Ask("ثبت پاسخ", "زمان و سقف این ارسال در سرور ثبت می‌شود؛ پاسخ‌های قبلی تغییر نمی‌کنند.", async () =>
+        {
+            _ = await Post<Guid>($"assessments/{a.Id:D}/work", new AttemptInput(a.Summary.IsQuiz ? null : _answer,
+                _files.Select(f => f.Id).ToArray(), a.Summary.IsQuiz ? _answers : null, _requestId));
+            await LoadDetail(a.Id, true);
+            Snack.Add("رسید پاسخ ثبت شد.", Severity.Success);
+        });
+    }
+    private decimal AttemptLimit(AttemptRow row) => row.ScoreLimit ?? _detail?.MaxScore ?? 0;
+    private void ShowAttempt(AttemptRow attempt)
+    {
+        _picked = attempt; _score = attempt.Grades.FirstOrDefault()?.Score ?? 0;
+        _feedback = attempt.Grades.FirstOrDefault()?.Feedback ?? ""; _attemptOpen = true;
+    }
+    private Task DraftGrade() => Run(() => SaveGrade(false));
+    private void AskRelease()
+    {
+        _attemptOpen = false;
+        Ask("انتشار نمره", $"نمرهٔ {Fa(_score)} و بازخورد فقط برای همان دانشجو قابل مشاهده خواهد بود.", () => SaveGrade(true));
+    }
+    private async Task SaveGrade(bool publish)
+    {
+        if (_picked is not { } attempt || _detail is not { } a) return;
+        _ = await Post<Guid>($"submissions/{attempt.Id:D}/grade", new GradeEdit(_score, _feedback, publish));
+        await LoadDetail(a.Id, false);
+        _picked = _work.FirstOrDefault(row => row.Id == attempt.Id);
+        _attemptOpen = _picked is not null;
+        Snack.Add(publish ? "نمره منتشر شد." : "پیش‌نویس نمره ثبت شد.", Severity.Success);
+    }
+    private void Ask(string title, string impact, Func<Task> action)
+    { _confirmation = title; _impact = impact; _confirmed = action; _confirm = true; }
+    private Task Confirm() => Run(async () =>
+    {
+        if (_confirmed is not null) await _confirmed();
+        _confirm = false; _confirmed = null;
+    });
+}

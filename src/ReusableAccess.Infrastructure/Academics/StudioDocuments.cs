@@ -57,13 +57,11 @@ internal static class StudioDocuments
         throw LmsError.Conflict("شمارهٔ قالب نسخه پشتیبانی نمی‌شود.");
     }
 
+    // V1/V2 documents are immutable; old assessment fields can be read but never scheduled or copied as content.
     internal static ScheduleItem[] ToSchedule(StudioContent content) => content.Chapters.OrderBy(c => c.Position).SelectMany(c =>
         new[] { new ScheduleItem(c.Key, ScheduleKind.Chapter, c.Title, StartDay: c.StartDay, EndDay: c.EndDay) }
             .Concat(c.Lessons.OrderBy(l => l.Position).Select(l => new ScheduleItem(l.Key, ScheduleKind.Lesson, l.Title, c.Key,
-                StartDay: l.StartDay, EndDay: l.EndDay)))
-            .Concat(c.Assessments.Select(a => new ScheduleItem(a.Key, ScheduleKind.Assessment, a.Title, c.Key, a.LessonKey,
-                a.StartDay ?? c.Lessons.FirstOrDefault(l => l.Key == a.LessonKey)?.StartDay ?? c.StartDay, a.EndDay, a.DueDay))))
-        .ToArray();
+                StartDay: l.StartDay, EndDay: l.EndDay)))).ToArray();
 
     internal static Guid[] MediaIds(StudioContent content) => content.Chapters.SelectMany(c => c.Lessons)
         .SelectMany(l => l.CoverId is { } cover ? l.MediaIds.Append(cover) : l.MediaIds).Distinct().ToArray();
@@ -81,9 +79,8 @@ internal static class StudioDocuments
             CheckItem(c.Key);
             Position(c.Position, chapterPositions);
             Window(c.StartDay, c.EndDay);
-            if (c.Lessons is not { Length: > 0 and <= 100 } || c.Assessments is not { Length: <= 200 } ||
-                c.Lessons.Any(x => x is null) || c.Assessments.Any(x => x is null))
-                throw LmsError.Invalid("هر فصل به حداقل یک درسک و مجموعهٔ معتبر ارزیابی‌ها نیاز دارد.");
+            if (c.Lessons is not { Length: > 0 and <= 100 } || c.Lessons.Any(x => x is null))
+                throw LmsError.Invalid("هر فصل به حداقل یک درسک معتبر نیاز دارد.");
             var lessonPositions = new HashSet<int>();
             var lessons = c.Lessons.Select(l =>
             {
@@ -98,34 +95,16 @@ internal static class StudioDocuments
                 if (body == "" && l.MediaIds.Length == 0) throw LmsError.Invalid("درسک باید متن یا پیوست آموزشی داشته باشد.");
                 return l with { Title = LmsError.Text(l.Title, 180), Summary = LmsError.Text(l.Summary, 250), Body = body };
             }).OrderBy(x => x.Position).ToArray();
-            var byKey = lessons.ToDictionary(l => l.Key);
-            var linked = new HashSet<(Guid, bool)>();
-            var assessments = c.Assessments.Select(a =>
-            {
-                CheckItem(a.Key);
-                StudioLesson? lesson = null;
-                if (a.LessonKey is { } id && (!byKey.TryGetValue(id, out lesson) || !linked.Add((id, a.IsQuiz))))
-                    throw LmsError.Invalid("ارزیابی باید به درسک همین فصل وصل باشد؛ از هر نوع تنها یک مورد در هر درسک.");
-                var start = a.StartDay ?? lesson?.StartDay ?? c.StartDay;
-                Window(start, a.EndDay);
-                Day(a.DueDay);
-                ParentWindow(c, start, a.EndDay ?? a.DueDay);
-                if (start < lesson?.StartDay || a.DueDay < start || a.EndDay < a.DueDay ||
-                    a.MaxAttempts is < 1 or > 20 || a.MaxScore is <= 0 or > 1000 || decimal.Round(a.MaxScore, 2) != a.MaxScore)
-                    throw LmsError.Invalid("روز ارزیابی، سقف نمره یا تعداد تلاش معتبر نیست.");
-                if (a.IsQuiz != (a.Quiz is { Length: > 0 })) throw LmsError.Invalid("برای آزمون سؤال ثبت کنید؛ تکلیف سؤال چهارگزینه‌ای ندارد.");
-                var quiz = LmsOfferings.ValidateQuiz(a.Quiz);
-                return a with { Title = LmsError.Text(a.Title, 180), Prompt = LmsError.Text(a.Prompt, 16000),
-                    Rubric = LmsError.Text(a.Rubric, 8000, true), Quiz = quiz is null ? null : JsonSerializer.Deserialize<QuizQuestionRow[]>(quiz) };
-            }).ToArray();
-            return c with { Title = LmsError.Text(c.Title, 180), Lessons = lessons, Assessments = assessments };
+            if (c.Assessments is { Length: > 0 })
+                throw LmsError.Invalid("نسخهٔ جدید محتوا ارزیابی ندارد؛ از بانک مستقل تکلیف استفاده کنید.");
+            return c with { Title = LmsError.Text(c.Title, 180), Lessons = lessons, Assessments = [] };
         }).OrderBy(x => x.Position).ToArray();
         return new(clean);
 
         void CheckItem(Guid key)
         {
             if (key == Guid.Empty || !keys.Add(key) || ++count > AcademicSchedule.MaxItems)
-                throw LmsError.Invalid("شناسهٔ قلم تکراری یا شمار فصل، درسک و ارزیابی بیش از حد مجاز است.");
+                throw LmsError.Invalid("شناسهٔ قلم تکراری یا شمار فصل و درسک بیش از حد مجاز است.");
         }
     }
 
@@ -149,6 +128,6 @@ internal static class StudioDocuments
     private static void ParentWindow(StudioChapter chapter, int? start, int? end)
     {
         if (start < chapter.StartDay || start > chapter.EndDay || end > chapter.EndDay)
-            throw LmsError.Invalid("روزهای درسک و ارزیابی باید در بازهٔ فصل باشند.");
+            throw LmsError.Invalid("روزهای درسک باید در بازهٔ فصل باشند.");
     }
 }

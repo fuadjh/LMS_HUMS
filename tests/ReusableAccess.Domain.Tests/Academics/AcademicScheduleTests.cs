@@ -77,17 +77,17 @@ public sealed class AcademicScheduleTests
     }
 
     [Fact]
-    public void LessonAndAssessmentReadRulesHonorDifferentEndBoundaries()
+    public void LessonAndAssignmentHonorIndependentEndBoundaries()
     {
-        var session = new LessonSession { Active = true, OpensUtc = Local(1) };
-        var chapter = new Chapter { Active = true, PublishedUtc = Local(0), VisibleFromUtc = Local(1), VisibleUntilUtc = Local(6, 0), OfferingId = session.OfferingId };
+        var chapter = new Chapter { Active = true, PublishedUtc = Local(0), VisibleFromUtc = Local(1), VisibleUntilUtc = Local(4, 0) };
         var lesson = new Lesson { Active = true, ChapterId = chapter.Id, VisibleUntilUtc = Local(3, 0) };
-        var task = new Assessment { Active = true, ChapterId = chapter.Id, LessonId = lesson.Id, OpensUtc = Local(1) };
-        Assert.False(AcademicRules.CanReadLesson(Local(1, 7), chapter, lesson, session));
-        Assert.True(AcademicRules.CanReadLesson(Local(1), chapter, lesson, session));
-        Assert.False(AcademicRules.CanReadLesson(Local(3, 0), chapter, lesson, session));
-        Assert.True(AcademicRules.CanReadAssessment(Local(3, 0), chapter, task));
-        Assert.False(AcademicRules.CanReadAssessment(Local(6, 0), chapter, task));
+        var task = new Assessment { Active = true, OfferingId = chapter.OfferingId, PublishedUtc = Local(0), OpensUtc = Local(1),
+            DueUtc = Local(7), CutoffUtc = Local(7) };
+        Assert.False(AcademicRules.CanReadLesson(Local(1, 7), chapter, lesson));
+        Assert.True(AcademicRules.CanReadLesson(Local(1), chapter, lesson));
+        Assert.False(AcademicRules.CanReadLesson(Local(3, 0), chapter, lesson));
+        Assert.True(AssignmentPolicies.CanSubmit(Local(4, 0), task, Window()));
+        Assert.False(AssignmentPolicies.CanSubmit(Local(7), task, Window()));
     }
 
     [Fact]

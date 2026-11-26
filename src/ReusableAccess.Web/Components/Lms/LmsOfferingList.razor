@@ -16,27 +16,33 @@
         @if (View == "admin" && _home?.Permissions.Contains(LmsPermissions.Assign) == true)
         { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Start(null)">افزودن گروه</MudButton> }
     </div>
-    <div class="lms-grid">
-        @foreach (var row in _rows)
-        {
-            <article class="lms-card" @key="row.Id">
-                <div class="lms-row"><span class="lms-pill">@Audience(row.Audience)</span>
+    <section class="lms-card mt-3">
+        <AppDataTable TRow="OfferingRow" Items="@_rows" RowKey="@(r => r.Id)" Caption="فهرست ارائه‌ها" Loading="@Busy"
+                      EmptyText="ارائه‌ای مطابق فیلتر یا قلمرو پیدا نشد.">
+            <Columns>
+                <th scope="col">درس و گروه</th><th scope="col">استاد مسئول</th><th scope="col">وضعیت</th><th scope="col">اقدام</th>
+            </Columns>
+            <RowCells Context="row">
+                <td><strong>@row.Course</strong><br /><small class="lms-muted">گروه @Fa(row.Group) · @Fa(row.Term)</small></td>
+                <td>@row.Lead</td>
+                <td>
+                    <span class="lms-pill">@Audience(row.Audience)</span>
                     @if (View == "student") { <span class="lms-pill lms-ok">@State(row.Status)</span> }
                     @if (row.Closed) { <span class="lms-pill lms-warn">پایان‌یافته</span> }
                     @if (!row.Active) { <span class="lms-pill">بایگانی</span> }
-                </div>
-                <h2>@row.Course</h2><p>گروه @Fa(row.Group) · @Fa(row.Term)</p><p class="lms-muted">استاد مسئول: @row.Lead</p>
-                @if (View != "student") { <p class="lms-muted">نمایش: <bdi>@DateText(row.VisibleUtc)</bdi> · @(row.PublishedUtc is null ? "منتشر نشده" : row.VisibleUtc is null || row.VisibleUtc > DateTimeOffset.UtcNow ? "منتشرشده؛ در انتظار نمایش" : "قابل مشاهده")</p> }
-                <div class="lms-row">
-                    <MudButton Variant="Variant.Outlined" Href="@($"/lms/offer/{row.Id:D}/{View}")">مشاهدهٔ ارائه</MudButton>
-                    @if (View == "teacher")
-                    { <MudButton Href="@($"/lms/offer/{row.Id:D}/schedule-view")">تقویم واقعی</MudButton> }
-                    @if (View == "admin" && !row.Closed) { <MudButton OnClick="() => Start(row)">واگذاری یا بایگانی</MudButton> }
-                </div>
-            </article>
-        }
-    </div>
-    @if (_rows.Length == 0 && !Busy) { <p>ارائه‌ای مطابق فیلتر یا قلمرو پیدا نشد.</p> }
+                    @if (View != "student")
+                    { <p class="lms-muted">نمایش: <bdi>@DateText(row.VisibleUtc)</bdi> · @(row.PublishedUtc is null ? "منتشر نشده" : row.VisibleUtc is null || row.VisibleUtc > DateTimeOffset.UtcNow ? "منتشرشده؛ در انتظار نمایش" : "قابل مشاهده")</p> }
+                </td>
+                <td>
+                    <div class="lms-row">
+                        <MudButton Variant="Variant.Outlined" Href="@($"/lms/offer/{row.Id:D}/{View}")">مشاهدهٔ ارائه</MudButton>
+                        @if (View == "teacher") { <MudButton Href="@($"/lms/offer/{row.Id:D}/schedule-view")">تقویم واقعی</MudButton> }
+                        @if (View == "admin" && !row.Closed) { <MudButton OnClick="() => Start(row)">واگذاری یا بایگانی</MudButton> }
+                    </div>
+                </td>
+            </RowCells>
+        </AppDataTable>
+    </section>
 </div>
 <LmsDialog @bind-Visible="_searchOpen" Title="جستجو در ارائه‌های مجاز" Busy="@Busy" Error="@Error" OnSave="Search" SaveText="جستجو">
     <label>عنوان درس یا کد گروه<input @bind="_search" maxlength="80" /></label>
@@ -67,7 +73,7 @@
     [Parameter] public string View { get; set; } = "student";
     private string Panel => View == "admin" ? "lms lms-admin" : View == "teacher" ? "lms lms-teacher" : "lms";
     private string Title => View == "admin" ? "مدیریت ارائه و گروه" : View == "teacher" ? "ارائه‌های تدریس من" : "دروس ارائه‌شده";
-    private string Description => View == "admin" ? "درس کاتالوگ با گروه تدریس و استاد مسئول فرق دارد." : View == "teacher" ? "زمان نمایش، جلسه‌ها و تاریخچهٔ تدریس" : "گروه‌های واجد شرایط، درس‌های اخذشده و وضعیت حذف‌واضافه";
+    private string Description => View == "admin" ? "درس کاتالوگ با گروه تدریس و استاد مسئول فرق دارد." : View == "teacher" ? "محتوای آموزشی، تکالیف مستقل و تاریخچهٔ تدریس" : "گروه‌های واجد شرایط، درس‌های اخذشده و وضعیت حذف‌واضافه";
     private LmsHome? _home;
     private OfferingRow[] _rows = [];
     private CatalogRow[] _terms = [], _cohorts = [], _courses = [], _majors = [], _instructors = [];

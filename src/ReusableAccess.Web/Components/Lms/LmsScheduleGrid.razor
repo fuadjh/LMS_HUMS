@@ -3,8 +3,7 @@
         <h2 id="studio-dates-title">بازبینی تقویم</h2>
         <label>فیلتر ردیف‌ها
             <select @bind="_filter">
-                <option value="all">همه</option><option value="content">محتوا</option>
-                <option value="assessment">ارزیابی</option><option value="issues">خطاها</option>
+                <option value="all">همه</option><option value="issues">خطاها</option>
             </select>
         </label>
         <span class="lms-pill @(Preview.Issues.Length == 0 ? "lms-ok" : "lms-bad")" role="status">@LmsPage.Fa(Preview.Issues.Length) خطا</span>
@@ -26,7 +25,6 @@
                     }
                 </div>
                 @Cell(row, ScheduleField.Start, row.Start)
-                @if (row.Due is { } due) { @Cell(row, ScheduleField.Due, due) }
                 @if (row.End is { } end) { @Cell(row, ScheduleField.End, end) }
             </article>
         }
@@ -41,8 +39,6 @@
     private string _filter = "all";
     private IEnumerable<ScheduleRow> Filtered => Preview.Rows.Where(row => _filter switch
     {
-        "content" => row.Item.Kind != ScheduleKind.Assessment,
-        "assessment" => row.Item.Kind == ScheduleKind.Assessment,
         "issues" => Preview.Issues.Any(x => x.Key == row.Item.Key),
         _ => true
     });

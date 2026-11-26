@@ -3,7 +3,7 @@ namespace ReusableAccess.Domain.Academics;
 public enum ScheduleMode { Relative = 1, Shift = 2 }
 public enum ScheduleDraftState { Draft = 1, Applied = 2, Discarded = 3 }
 
-// Operational times belong to Chapter, LessonSession, Lesson and Assessment. This row is a draft or receipt.
+// Operational content times belong to Chapter and Lesson. This row is a draft or receipt.
 public sealed class OfferingScheduleDraft
 {
     public Guid OfferingId { get; set; }

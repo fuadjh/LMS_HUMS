@@ -936,7 +936,7 @@ namespace ReusableAccess.Infrastructure.Persistence.Migrations
 
                     b.Navigation("Scopes");
                 });
-            AcademicStudioSchemaV2.Build(modelBuilder);
+            AcademicWorkspaceSchemaV3.Build(modelBuilder);
 #pragma warning restore 612, 618
         }
     }

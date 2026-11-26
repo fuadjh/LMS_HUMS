@@ -44,7 +44,6 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
         var enrolled = await enrollmentRows.Where(e => ids.Contains(e.OfferingId) && e.Status == EnrollmentStatus.Active)
             .GroupBy(e => e.OfferingId).Select(g => new { Id = g.Key, Total = g.Count() }).ToDictionaryAsync(x => x.Id, x => x.Total, ct);
         var occupied = (await data.Read<Chapter>().Where(c => ids.Contains(c.OfferingId)).Select(c => c.OfferingId)
-            .Union(data.Read<LessonSession>().Where(s => ids.Contains(s.OfferingId)).Select(s => s.OfferingId))
             .Union(enrollmentRows.Where(e => ids.Contains(e.OfferingId)).Select(e => e.OfferingId)).ToArrayAsync(ct)).ToHashSet();
         var drafts = await data.Read<OfferingScheduleDraft>().Where(d => ids.Contains(d.OfferingId) && d.UpdatedBy == user)
             .ToDictionaryAsync(d => d.OfferingId, d => d.State, ct);
@@ -68,8 +67,8 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
         var target = await Target(offeringId, ct);
         await RequireEmpty(target, ct);
         var (template, _) = await templates.Version(versionId, target.Course.Id, ct);
-        return await Origins(target, template.Id).OrderByDescending(o => o.TermStart).ThenBy(o => o.Source.Group)
-            .Select(o => o.Source).Take(100).ToArrayAsync(ct);
+        var rows = await Origins(target, template.Id).Take(100).ToArrayAsync(ct);
+        return rows.Select(o => o.Source).ToArray();
     }
 
     public async Task<StudioSchedulePreview> Preview(Guid offeringId, StudioPlan input, CancellationToken ct)
@@ -172,9 +171,8 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
             throw LmsError.Conflict("زمان‌بندی مبدأ یا تقویم رسمی تغییر کرده است؛ دوباره پیش‌نمایش و ذخیره کنید.");
         if (computed.View.Issues.Length > 0) throw LmsError.Conflict("پیش از اعمال برنامه همهٔ خطاهای تقویم را اصلاح کنید.");
         var now = data.Now;
-        if (publish && (now >= target.Term.EnrollClosesUtc || computed.View.Rows.Any(r => r.Item.Kind == ScheduleKind.Assessment &&
-                (r.End?.AtUtc ?? r.Due?.AtUtc) <= now)))
-            throw LmsError.Conflict("مهلت اخذ یا مهلت نهایی یک ارزیابی گذشته است؛ انتشار ممکن نیست.");
+        if (publish && now >= target.Term.EnrollClosesUtc)
+            throw LmsError.Conflict("بعد از مهلت اخذ، انتشار اولیه ممکن نیست.");
         if (publish) await offerings.ValidateInstructor(target.Offering.LeadId, target.Course.FacultyId, target.Offering.OwnerMajorId, true, ct);
         var (header, _) = await templates.Version(receipt.TemplateVersionId, target.Course.Id, ct);
         await templates.VerifyMedia(header, computed.Content, ct);
@@ -208,13 +206,13 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
         LmsData.Open(info.Term, data.Now);
         if (!info.Course.Active || !await data.Read<Faculty>().AnyAsync(f => f.Id == info.Course.FacultyId && f.Active, ct) ||
             !info.Offering.Active || info.Offering.PublishedUtc is not null ||
-            await data.Read<Chapter>().AnyAsync(c => c.OfferingId == id, ct) || await data.Read<LessonSession>().AnyAsync(s => s.OfferingId == id, ct) ||
+            await data.Read<Chapter>().AnyAsync(c => c.OfferingId == id, ct) ||
             await data.Read<Enrollment>().AnyAsync(e => e.OfferingId == id, ct))
             throw LmsError.Conflict("کارگاه فقط روی ارائهٔ واگذارشده، فعال، خالی و منتشرنشده قابل اعمال است.");
     }
 
-    private sealed record OriginRow(StudioSource Source, DateTimeOffset TermStart, Guid OfferingRevision);
-    private IQueryable<OriginRow> Origins(OfferingInfo dest, Guid templateId)
+    private sealed record OriginRow(StudioSource Source, Guid OfferingRevision);
+    private IQueryable<OriginRow> Origins(OfferingInfo dest, Guid templateId, Guid? sourceId = null)
     {
         var actor = access.ActorId; var courseId = dest.Course.Id; var before = dest.Term.StartsUtc;
         var publishedChapters = data.Read<Chapter>().Where(c => c.Active && c.TemplateItemKey != null && c.PublishedUtc != null);
@@ -222,10 +220,12 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
                join v in data.Read<TemplateVersion>() on d.TemplateVersionId equals v.Id
                join o in data.Read<Offering>() on d.OfferingId equals o.Id
                join t in data.Read<Term>() on o.TermId equals t.Id
-               where v.TemplateId == templateId && o.LeadId == actor && d.UpdatedBy == actor && o.CourseId == courseId &&
+               where v.TemplateId == templateId && (sourceId == null || o.Id == sourceId) &&
+                     o.LeadId == actor && d.UpdatedBy == actor && o.CourseId == courseId &&
                      t.StartsUtc < before && d.State == ScheduleDraftState.Applied && o.PublishedUtc != null &&
                      publishedChapters.Any(c => c.OfferingId == o.Id)
-               select new OriginRow(new StudioSource(o.Id, t.Year, t.Season, o.GroupCode, d.ClassesStartDate, v.Id), t.StartsUtc, o.Revision);
+               orderby t.StartsUtc descending, o.GroupCode, o.Id
+               select new OriginRow(new StudioSource(o.Id, t.Year, t.Season, o.GroupCode, d.ClassesStartDate, v.Id), o.Revision);
     }
 
     private async Task<Computed> Calculate(OfferingInfo target, StudioPlan input, CancellationToken ct)
@@ -244,7 +244,7 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
         ScheduleOrigin? origin = null;
         if (input.OriginOfferingId is { } sourceId)
         {
-            var row = await Origins(target, template.Id).SingleOrDefaultAsync(o => o.Source.OfferingId == sourceId, ct)
+            var row = await Origins(target, template.Id, sourceId).SingleOrDefaultAsync(ct)
                       ?? throw LmsError.Missing();
             var actual = await Actual(await access.Offering(sourceId, ct), true, ct);
             origin = new(row.Source.ClassesStartDate, actual.Rows.ToDictionary(x => x.Key, x => new ScheduleOriginRow(x.Kind, x.Times)));
@@ -257,7 +257,7 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
         var term = target.Term;
         var termVersion = Stamp(new { term.Id, term.Active, term.StartsUtc, term.EndsUtc, term.EnrollOpensUtc, term.EnrollClosesUtc,
             term.DropOpensUtc, term.DropClosesUtc, term.ClosedUtc });
-        var stamp = Stamp(new { target.Offering.Id, target.Offering.Revision, Term = termVersion, Origin = originVersion, Plan = Normalize(input) });
+        var stamp = Stamp(new { target.Offering.Id, target.Offering.Revision, Term = termVersion, Origin = originVersion, WorkspaceFormat = 3, Plan = Normalize(input) });
         return new(content, new(target.Offering.Revision, stamp, calc.Rows, calc.Issues), termVersion, originVersion);
     }
 
@@ -268,21 +268,14 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
             .Select(x => (DateOnly?)x.ClassesStartDate).SingleOrDefaultAsync(ct);
         var chapters = await data.Read<Chapter>().Where(c => c.OfferingId == id && c.Active && (!mappedOnly || c.PublishedUtc != null)).OrderBy(c => c.Position).ToArrayAsync(ct);
         var ids = chapters.Select(x => x.Id).ToArray();
-        var lessons = (await data.Read<Lesson>().Where(l => ids.Contains(l.ChapterId) && l.Active).OrderBy(l => l.Position).ToArrayAsync(ct)).ToLookup(l => l.ChapterId);
-        var sessions = await data.Read<LessonSession>().Where(s => s.OfferingId == id && s.Active).ToDictionaryAsync(s => s.Id, s => s.OpensUtc, ct);
-        var assessments = (await data.Read<Assessment>().Where(a => ids.Contains(a.ChapterId) && a.Active).OrderBy(a => a.DueUtc).ThenBy(a => a.Id)
-            .ToArrayAsync(ct)).ToLookup(a => a.ChapterId);
+        var lessons = (await data.Read<Lesson>().Where(l => ids.Contains(l.ChapterId) && l.Active && (!mappedOnly || !l.NeedsAvailabilityReview))
+            .OrderBy(l => l.Position).ToArrayAsync(ct)).ToLookup(l => l.ChapterId);
         var rows = new List<StudioActualRow>();
         foreach (var c in chapters)
         {
             Add(c.TemplateItemKey, c.Id, ScheduleKind.Chapter, c.Title, new(c.VisibleFromUtc, c.VisibleUntilUtc, null));
             foreach (var l in lessons[c.Id])
-            {
-                var session = l.SessionId is { } key && sessions.TryGetValue(key, out var utc) ? utc : (DateTimeOffset?)null;
-                Add(l.TemplateItemKey, l.Id, ScheduleKind.Lesson, l.Title, new(AcademicRules.Later(l.VisibleFromUtc, session), l.VisibleUntilUtc, null));
-            }
-            foreach (var a in assessments[c.Id])
-                Add(a.TemplateItemKey, a.Id, ScheduleKind.Assessment, a.Title, new(a.OpensUtc, a.CutoffUtc != a.DueUtc ? a.CutoffUtc : null, a.DueUtc));
+                Add(l.TemplateItemKey, l.Id, ScheduleKind.Lesson, l.Title, new(l.VisibleFromUtc, l.VisibleUntilUtc, null));
         }
         return new(id, info.Course.Title, start, info.Offering.VisibleUtc, info.Offering.PublishedUtc, rows.ToArray());
 

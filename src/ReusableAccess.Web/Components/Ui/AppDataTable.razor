@@ -1,0 +1,32 @@
+@typeparam TRow
+
+<div class="ra-data-table-frame" role="region" aria-label="@Caption" tabindex="0" aria-busy="@(Loading ? "true" : "false")">
+    <table class="ra-data-table">
+        <caption class="ra-data-table-caption">@Caption</caption>
+        <thead><tr>@Columns</tr></thead>
+        <tbody>
+            @foreach (var row in Items)
+            {
+                <tr @key="RowKey(row)">@RowCells(row)</tr>
+            }
+        </tbody>
+    </table>
+</div>
+@if (Loading)
+{
+    <p class="ra-data-table-state" role="status">در حال دریافت…</p>
+}
+else if (Items.Count == 0)
+{
+    <p class="ra-data-table-state" role="status">@EmptyText</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Caption { get; set; } = "فهرست";
+    [Parameter, EditorRequired] public IReadOnlyList<TRow> Items { get; set; } = [];
+    [Parameter, EditorRequired] public Func<TRow, object> RowKey { get; set; } = default!;
+    [Parameter, EditorRequired] public RenderFragment Columns { get; set; } = default!;
+    [Parameter, EditorRequired] public RenderFragment<TRow> RowCells { get; set; } = default!;
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "موردی برای نمایش نیست.";
+}

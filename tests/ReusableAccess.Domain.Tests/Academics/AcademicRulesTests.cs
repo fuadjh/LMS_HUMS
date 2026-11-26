@@ -43,12 +43,15 @@ public sealed class AcademicRulesTests
         Assert.True(AcademicRules.Eligible(OfferingAudience.Specialized, faculty, major, faculty, major, true));
     }
     [Fact]
-    public void VisibilityDoesNotOpenAContentSession()
+    public void ContentReadsOnlyFromItsOwnChapterAndLessonWindows()
     {
+        var chapter = new Chapter { Active = true, PublishedUtc = Now.AddDays(-1) };
+        var lesson = new Lesson { Active = true, ChapterId = chapter.Id, VisibleFromUtc = Now.AddMinutes(1) };
         Assert.True(AcademicRules.CanSee(Now, Now.AddDays(-1), Now));
-        Assert.False(AcademicRules.CanReadLesson(Now, Now, Now.AddMinutes(1)));
-        Assert.False(AcademicRules.CanReadLesson(Now, null, Now));
-        Assert.True(AcademicRules.CanReadLesson(Now, Now, Now));
+        Assert.False(AcademicRules.CanReadLesson(Now, chapter, lesson));
+        Assert.True(AcademicRules.CanReadLesson(Now.AddMinutes(1), chapter, lesson));
+        lesson.NeedsAvailabilityReview = true;
+        Assert.False(AcademicRules.CanReadLesson(Now.AddMinutes(1), chapter, lesson));
     }
     [Fact]
     public void JalaliParsesPersianAndArabicDigitsAndRoundTripsTehran()
