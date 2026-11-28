@@ -27,32 +27,36 @@ mig = infra / 'Persistence/Migrations'
 v1 = (mig / '20261121203400_AddUniversityLms.cs').read_text()
 v2 = (mig / '20261125090000_AddLmsStudio.cs').read_text()
 v3 = (mig / '20261126093000_SeparateOfferingWorkspace.cs').read_text()
+v4 = (mig / '20261126183000_LearningCurriculumAndMajorCourses.cs').read_text()
 model = '\n'.join((infra / f'Academics/{name}.cs').read_text() for name in ('AcademicModel', 'OfferingWorkspaceModel'))
 frozen1 = (mig / 'AcademicSchemaV1.cs').read_text()
 frozen2 = (mig / 'AcademicStudioSchemaV2.cs').read_text()
 frozen3 = (mig / 'AcademicWorkspaceSchemaV3.cs').read_text()
+frozen4 = (mig / 'AcademicLearningSchemaV4.cs').read_text()
 snapshot = (mig / 'ApplicationDbContextModelSnapshot.cs').read_text(encoding='utf-8-sig')
 read_classes = lambda name: set(re.findall(r'public sealed class (\w+)', (domain / name).read_text()))
-read_tables = lambda text: set(re.findall(r'CreateTable\(\s*name: "(\w+)", schema: "lms"', text))
+read_tables = lambda text: set(re.findall(r'CreateTable\(\s*name: "(\w+)", schema: (?:"lms"|schema)', text))
 read_models = lambda text: set(re.findall(r'b.ToTable\("(\w+)", "lms"\);', text))
 assert read_classes('AcademicEntities.cs') == read_tables(v1) == read_models(frozen1)
 assert read_classes('StudioEntities.cs') == read_tables(v2) == read_models(frozen2) == {'OfferingScheduleDraft', 'TemplateVersionMedia'}
 assert read_classes('OfferingWorkspaceEntities.cs') == read_tables(v3)
-assert read_models(model) == read_tables(v1) | read_tables(v2) | read_tables(v3) == read_models(frozen3)
-fks = re.findall(r'AddForeignKey\([^;]+;', v1 + v2 + v3)
+assert read_tables(v4) == {'LearningMaterial'}
+assert read_models(frozen3) == read_tables(v1) | read_tables(v2) | read_tables(v3)
+assert read_models(model) == read_models(frozen3) | read_tables(v4) == read_models(frozen4)
+fks = re.findall(r'AddForeignKey\([^;]+;', v1 + v2 + v3 + v4)
 assert fks and all('ReferentialAction.NoAction' in x for x in fks)
-expected_fks = len(re.findall(r'AddForeignKey\([^;]+;', v1 + v2)) + len(re.findall(r'^        Link\(', v3, re.M)) - v3.count('DropForeignKey(')
-assert expected_fks == model.count('OnDelete(DeleteBehavior.NoAction)') == frozen3.count('OnDelete(DeleteBehavior.NoAction)')
+expected_fks = len(re.findall(r'AddForeignKey\([^;]+;', v1 + v2)) + len(re.findall(r'^        Link\(', v3, re.M)) - v3.count('DropForeignKey(') + len(re.findall(r'AddForeignKey\([^;]+;', v4))
+assert expected_fks == model.count('OnDelete(DeleteBehavior.NoAction)') == frozen4.count('OnDelete(DeleteBehavior.NoAction)')
 assert 'HasFilter("[EndedUtc] IS NULL")' in model and 'unique: true, filter: "[EndedUtc] IS NULL"' in v1
-assert 'AcademicWorkspaceSchemaV3.Build(modelBuilder)' in snapshot and 'AcademicSchemaV1.Build(model)' in frozen2
+assert 'AcademicLearningSchemaV4.Build(modelBuilder)' in snapshot and 'AcademicSchemaV1.Build(model)' in frozen2
 assert all(op not in v1 + v2 for op in ('DropTable', 'DropColumn', 'DeleteData'))
-assert all(op not in v3 for op in ('DropTable', 'DropColumn', 'DeleteData'))
-print(f'PASS: {len(read_models(model))} tables in V1–V3, {expected_fks} NO ACTION FKs; static snapshot wiring only')
+assert all(op not in v3 + v4 for op in ('DropTable', 'DropColumn', 'DeleteData'))
+print(f'PASS: {len(read_models(model))} tables in V1–V4, {expected_fks} NO ACTION FKs; static snapshot wiring only')
 
 api = '\n'.join((src / f'ReusableAccess.Api/Academics/{name}Endpoints.cs').read_text() for name in ('Lms', 'Studio', 'OfferingWorkspace'))
-registered = re.findall(r'r.Map(Get|Post|Put)\("(/[^"]+)"', api)
+registered = re.findall(r'(?:r|learning).Map(Get|Post|Put)\("(/[^"]+)"', api)
 assert len(registered) == len(set(registered))
-assert all('WithName(' in chunk for chunk in re.split(r'\br.Map(Get|Post|Put)\(', api)[1:] if chunk not in ('Get', 'Post', 'Put'))
+assert all('WithName(' in chunk for chunk in re.split(r'\b(?:r|learning).Map(Get|Post|Put)\(', api)[1:] if chunk not in ('Get', 'Post', 'Put'))
 assert 'RequireAuthorization("AccessApi")' in api and 'r.MapLmsStudio();' in api and 'r.MapOfferingWorkspace();' in api
 assert 'WithMetadata(new RequestSizeLimitAttribute(UploadLimits.FileBytes))' in api
 handler_types = set(re.findall(r'public sealed record (\w+(?:Query|Command))\(', '\n'.join(p.read_text() for p in app)))
@@ -64,17 +68,19 @@ assert compat.count('"/api/console/writable-scopes"') == 1 and 'new GetWritableS
 print(f'PASS: {len(registered)} named LMS endpoints, {len(endpoint_types)} matching CQRS request types; writable-scopes wiring')
 
 ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-for profile, tail in [('student', ['student_number']), ('teacher', ['classification', 'cv_url'])]:
+people = ['national_id', 'first_name', 'last_name', 'organization_code', 'email', 'mobile']
+for profile, expected in [('student', people + ['student_number']), ('teacher', people + ['classification', 'cv_url']),
+                          ('courses', ['course_code', 'title']), ('offerings', ['course_code', 'group_code', 'instructor_code'])]:
     with zipfile.ZipFile(src / f'ReusableAccess.Web/wwwroot/lms-templates/{profile}.xlsx') as w:
         assert w.testzip() is None and not any('vba' in n.lower() for n in w.namelist())
         sheet = ET.fromstring(w.read('xl/worksheets/sheet1.xml'))
         rows = sheet.findall('.//s:row', ns)
         assert len(rows) == 501 and not sheet.findall('.//s:f', ns)
         values = [x.text for x in rows[0].findall('.//s:t', ns)]
-        assert values == ['national_id', 'first_name', 'last_name', 'organization_code', 'email', 'mobile', *tail]
+        assert values == expected
         assert rows[1].find('s:c', ns).get('s') is not None
         assert not any(r.findall('.//s:v', ns) or r.findall('.//s:t', ns) for r in rows[1:])
-print('PASS: 2 XLSX templates; no data/formula/macro; expected headers and 500 styled blank rows')
+print('PASS: 4 XLSX templates; no data/formula/macro; expected headers and 500 styled blank rows')
 
 if len(sys.argv) == 2:
     with zipfile.ZipFile(sys.argv[1]) as base:

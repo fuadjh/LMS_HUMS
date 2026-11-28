@@ -48,6 +48,7 @@
                 <summary><strong>فصل @Fa(model.Chapters.IndexOf(chapter) + 1) · @(string.IsNullOrWhiteSpace(chapter.Title) ? "بدون عنوان" : chapter.Title)</strong></summary>
                 <div class="lms-grid">
                     <label>عنوان فصل<input @bind="chapter.Title" maxlength="180" disabled="@Busy" /></label>
+                    <label>خلاصهٔ فصل<input @bind="chapter.Summary" maxlength="320" disabled="@Busy" /></label>
                     <label>روز شروع فصل<input type="number" min="0" max="730" @bind="chapter.StartDay" disabled="@Busy" /></label>
                     <label>تا پایان روز (اختیاری)<input type="number" min="0" max="730" @bind="chapter.EndDay" disabled="@Busy" /></label>
                 </div>
@@ -61,9 +62,11 @@
                 {
                     <details class="lms-card my-2" @key="lesson.Key">
                         <summary>@(string.IsNullOrWhiteSpace(lesson.Title) ? "درسک تازه" : lesson.Title) · @Fa(lesson.Files.Count) فایل</summary>
+                        @if (lesson.Materials.Length > 0)
+                        { <p class="lms-muted">@Fa(lesson.Materials.Length) منبع نوع‌دار از ارائه حفظ می‌شود؛ ویرایش این منابع در کارگاه محتوای ارائه انجام می‌شود.</p> }
                         <div class="lms-grid">
                             <label>عنوان درسک<input @bind="lesson.Title" maxlength="180" disabled="@Busy" /></label>
-                            <label>خلاصه<input @bind="lesson.Summary" maxlength="250" disabled="@Busy" /></label>
+                            <label>خلاصه<input @bind="lesson.Summary" maxlength="320" disabled="@Busy" /></label>
                             <label>روز شروع درسک<input type="number" min="0" max="730" @bind="lesson.StartDay" disabled="@Busy" /></label>
                             <label>تا پایان روز (اختیاری)<input type="number" min="0" max="730" @bind="lesson.EndDay" disabled="@Busy" /></label>
                         </div>

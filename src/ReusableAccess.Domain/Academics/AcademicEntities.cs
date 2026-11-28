@@ -4,7 +4,7 @@ namespace ReusableAccess.Domain.Academics;
 public enum TermSeason { Mehr = 1, Bahman = 2, Summer = 3 }
 public enum OfferingAudience { General = 1, Common = 2, Specialized = 3 }
 public enum EnrollmentStatus { Active = 1, WithdrawnByStudent = 2, RemovedByAdmin = 3 }
-public enum MediaPurpose { InstructorAvatar = 1, StudentAvatar = 2, LessonMaterial = 3, Submission = 4, RosterExcel = 5, TemplateMaterial = 6, TemplateCover = 7 }
+public enum MediaPurpose { InstructorAvatar = 1, StudentAvatar = 2, LessonMaterial = 3, Submission = 4, RosterExcel = 5, TemplateMaterial = 6, TemplateCover = 7, CurriculumFile = 8, CurriculumCover = 9 }
 public enum UploadState { Pending = 1, Receiving = 2, Stored = 3, Rejected = 4, Interrupted = 5, Incomplete = 6 }
 
 public sealed class Faculty
@@ -102,6 +102,8 @@ public sealed class AcademicGrant
 
 public sealed class CatalogCourse
 {
+    // FacultyId is retained for historical and common offerings; new courses require MajorId.
+    public Guid? MajorId { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid FacultyId { get; set; }
     public string Code { get; set; } = string.Empty;
@@ -111,6 +113,11 @@ public sealed class CatalogCourse
 
 public sealed class Offering
 {
+    public string? DraftIntroduction { get; set; }
+    public string? PublishedIntroduction { get; set; }
+    public int CurriculumVersion { get; set; }
+    public Guid? PublishedCurriculumToken { get; set; }
+    public Guid? PublishedCurriculumScope { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CourseId { get; set; }
     public Guid TermId { get; set; }
@@ -166,6 +173,11 @@ public sealed class TemplateVersion
 
 public sealed class Chapter
 {
+    public string? Summary { get; set; }
+    public bool WorkspaceManaged { get; set; }
+    public Guid? PendingBaseId { get; set; }
+    public Guid? StableChapterId { get; set; }
+    public bool Retired { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid OfferingId { get; set; }
     public string Title { get; set; } = string.Empty;
@@ -189,6 +201,8 @@ public sealed class LessonSession
 
 public sealed class Lesson
 {
+    public Guid? StableLessonId { get; set; }
+    public Guid? FeaturedMaterialKey { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ChapterId { get; set; }
     public string Title { get; set; } = string.Empty;
@@ -256,6 +270,7 @@ public sealed class EnrollmentEvent
 
 public sealed class LessonProgress
 {
+    public DateTimeOffset? ClearedUtc { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid EnrollmentId { get; set; }
     public Guid LessonId { get; set; }

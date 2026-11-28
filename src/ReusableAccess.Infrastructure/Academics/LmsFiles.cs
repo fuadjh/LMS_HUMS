@@ -33,6 +33,11 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
     }
     private string FilePath(Guid id) => Path.Combine(Root, id.ToString("N") + ".blob");
     private string TempPath(Guid id) => Path.Combine(Root, id.ToString("N") + ".part");
+    internal bool Exists(Guid id)
+    {
+        try { return File.Exists(FilePath(id)); }
+        catch (UseCaseException) { return false; }
+    }
     internal Stream Open(Media m)
     {
         var path = FilePath(m.Id);
@@ -43,6 +48,8 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
     {
         MediaPurpose.RosterExcel => UploadLimits.RosterBytes,
         MediaPurpose.TemplateCover => UploadLimits.CoverBytes,
+        MediaPurpose.CurriculumFile => UploadLimits.CurriculumFileBytes,
+        MediaPurpose.CurriculumCover => UploadLimits.CurriculumCoverBytes,
         _ => UploadLimits.FileBytes
     };
     internal static bool Allowed(MediaPurpose purpose, string ext) => purpose switch
@@ -50,6 +57,8 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
         MediaPurpose.InstructorAvatar or MediaPurpose.StudentAvatar or MediaPurpose.TemplateCover => ext is ".jpg" or ".jpeg" or ".png",
         MediaPurpose.LessonMaterial or MediaPurpose.TemplateMaterial => ext is ".mp4" or ".pdf" or ".docx" or ".jpg" or ".jpeg" or ".png" or ".xlsx",
         MediaPurpose.Submission => ext is ".pdf" or ".docx" or ".jpg" or ".jpeg" or ".png" or ".mp4" or ".xlsx",
+        MediaPurpose.CurriculumCover => LearningKinds.IsCover(ext),
+        MediaPurpose.CurriculumFile => LearningKinds.FromExtension(ext) != LearningKind.LegacyFile,
         MediaPurpose.RosterExcel => ext == ".xlsx", _ => false
     };
     internal async Task<UploadTicket> Start(UploadStart input, CancellationToken ct)
@@ -114,6 +123,14 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
                 if (await data.Read<Media>().CountAsync(f => f.OwnerId == owner && f.TargetId == targetId && f.CreatedUtc >= since &&
                     (f.Purpose == MediaPurpose.TemplateMaterial || f.Purpose == MediaPurpose.TemplateCover), ct) >= 64)
                     throw LmsError.Conflict("سقف ارسال روزانهٔ فایل برای این قالب تکمیل شده است.");
+                break;
+            case MediaPurpose.CurriculumFile:
+            case MediaPurpose.CurriculumCover:
+                var info = await access.Offering(targetId, ct);
+                await access.AsTeaching(info, LmsPermissions.LessonUpload, ct);
+                await access.AsTeaching(info, LmsPermissions.Content, ct);
+                LmsData.Open(info.Term, data.Now);
+                if (!info.Offering.Active) throw LmsError.Conflict("ارائه بایگانی است.");
                 break;
             case MediaPurpose.Submission:
                 var i = await grading.Find(targetId, ct);
@@ -193,7 +210,9 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
             if (received != attempt.ReportedBytes) throw LmsError.Invalid("حجم واقعی و اعلامی یکسان نیست.");
             errorCode = "signature";
             if (!ValidSignature(temp, attempt.Extension) ||
-                (attempt.Purpose == MediaPurpose.TemplateCover && !CoverDimensions.Valid(temp, attempt.Extension)))
+                (attempt.Purpose == MediaPurpose.TemplateCover && !CoverDimensions.Valid(temp, attempt.Extension)) ||
+                ((attempt.Purpose is MediaPurpose.CurriculumFile or MediaPurpose.CurriculumCover) &&
+                 LearningKinds.FromExtension(attempt.Extension) == LearningKind.Image && !LearningImageEnvelope.Valid(temp, attempt.Extension)))
                 throw LmsError.Invalid("ساختار فایل یا ابعاد کاور با نوع مجاز سازگار نیست.");
             errorCode = "commit-unconfirmed";
             // Re-check the resource after streaming (it could have closed/deactivated since registration).
@@ -213,6 +232,8 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
                 case MediaPurpose.LessonMaterial:
                     var last = await data.Read<LessonFile>().Where(l => l.LessonId == media.TargetId).MaxAsync(l => l.Position, ct);
                     data.Db.Add(new LessonFile { LessonId = media.TargetId, MediaId = media.Id, Position = (last ?? 0) + 1 });
+                    var lessonInfo = await enrollments.LessonInfo(media.TargetId, ct);
+                    (await data.Find<Offering>(lessonInfo.Chapter.OfferingId, ct)).Revision = Guid.NewGuid();
                     break;
             }
             tracking.UpdatedUtc = data.Now; tracking.State = UploadState.Stored; tracking.ReceivedBytes = received; tracking.Code = null;
@@ -274,6 +295,8 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
             case MediaPurpose.LessonMaterial:
             case MediaPurpose.TemplateMaterial:
             case MediaPurpose.TemplateCover:
+            case MediaPurpose.CurriculumFile:
+            case MediaPurpose.CurriculumCover:
             {
                 if (access.HasTeacher(LmsPermissions.Template))
                 {
@@ -289,11 +312,15 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
                 var links = m.Purpose == MediaPurpose.TemplateCover
                     ? await data.Read<Lesson>().Where(l => l.CoverMediaId == id).Select(l => l.Id).ToArrayAsync(ct)
                     : await data.Read<LessonFile>().Where(x => x.MediaId == id).Select(x => x.LessonId).ToArrayAsync(ct);
+                var materialLinks = await data.Read<LearningMaterial>().Where(r => !r.Removed && (r.MediaId == id || r.CoverId == id))
+                    .Select(r => r.LessonId).ToArrayAsync(ct);
                 var allowed = false; var now = data.Now;
-                foreach (var lid in links)
+                foreach (var lid in links.Concat(materialLinks).Distinct())
                 {
                     var lesson = await enrollments.LessonInfo(lid, ct);
-                    if (access.HasTeacher(LmsPermissions.Teach) && (lesson.Info.Offering.LeadId == user || await access.CoAssignment(lesson.Chapter.OfferingId, ct) is not null))
+                    if (access.HasTeacher(LmsPermissions.Teach) && (lesson.Info.Offering.LeadId == user ||
+                        !lesson.Chapter.Retired && await access.CoAssignment(lesson.Chapter.OfferingId, ct) is { } co &&
+                        (lesson.Chapter.PublishedUtc is not null || co.CanPublish && access.HasTeacher(LmsPermissions.Publish))))
                     { allowed = true; break; }
                     if (!access.HasStudent(LmsPermissions.Learn) || !LmsEnrollments.PublishedLesson(lesson, now)) continue;
                     var own = await access.OwnEnrollment(lesson.Chapter.OfferingId, ct);
@@ -310,6 +337,8 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
     private static string Mime(string ext) => ext switch
     {
         ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".mp4" => "video/mp4", ".pdf" => "application/pdf",
+        ".webm" => "video/webm", ".mp3" => "audio/mpeg", ".wav" => "audio/wav", ".ogg" => "audio/ogg",
+        ".gif" => "image/gif", ".webp" => "image/webp",
         ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", _ => "application/octet-stream"
     };
@@ -338,11 +367,25 @@ internal sealed class LmsFiles(LmsData data, LmsAccess access, LmsEnrollments en
                 ".png" => h.StartsWith(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
                 ".pdf" => h.StartsWith("%PDF-"u8),
                 ".mp4" => h[4..].StartsWith("ftyp"u8),
+                ".webm" => h[0] == 0x1a && h[1] == 0x45 && h[2] == 0xdf && h[3] == 0xa3 && WebmContainer(file),
+                ".mp3" => h.StartsWith("ID3"u8) || h[0] == 0xff && (h[1] & 0xe6) == 0xe2 && (h[2] & 0xf0) is > 0 and < 0xf0,
+                ".ogg" => h.StartsWith("OggS\0"u8),
+                ".wav" => h.StartsWith("RIFF"u8) && h[8..].StartsWith("WAVE"u8),
+                ".gif" => h.StartsWith("GIF89a"u8) || h.StartsWith("GIF87a"u8),
+                ".webp" => h.StartsWith("RIFF"u8) && h[8..].StartsWith("WEBP"u8),
                 ".docx" or ".xlsx" => h[0] == 80 && h[1] == 75 && OfficeStructure(file, ext),
                 _ => false
             };
         }
         catch (Exception e) when (e is IOException or InvalidDataException or OverflowException or NotSupportedException) { return false; }
+    }
+    private static bool WebmContainer(Stream file)
+    {
+        // EBML DocType (0x42,0x82), single-byte size 4, literal WebM.
+        file.Position = 0;
+        Span<byte> bytes = stackalloc byte[512];
+        var n = file.ReadAtLeast(bytes, bytes.Length, false);
+        return bytes[..n].IndexOf(new byte[] { 0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d }) >= 0;
     }
     private static bool OfficeStructure(Stream file, string ext)
     {

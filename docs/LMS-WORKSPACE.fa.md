@@ -57,8 +57,8 @@ dotnet test .\ReusableAccess.slnx -c Release --no-build
 برای تست‌های SQL، `RA_SQLSERVER_TEST_CONNECTION` را فقط به نمونهٔ آزمایشیِ جدا با اجازهٔ ساخت و حذف DB تست بدهید؛ بدون این متغیر، آزمون‌های وابسته می‌توانند Skip شوند. در همان محیط آزمایشی:
 
 ```powershell
-dotnet ef migrations has-pending-model-changes --project .\src\ReusableAccess.Infrastructure --startup-project .\src\ReusableAccess.Api --context ApplicationDbContext -c Release --no-build
-dotnet ef migrations script 20261125090000_AddLmsStudio 20261126093000_SeparateOfferingWorkspace --idempotent --project .\src\ReusableAccess.Infrastructure --startup-project .\src\ReusableAccess.Api --context ApplicationDbContext -c Release --no-build --output lms-workspace-upgrade.sql
+dotnet ef migrations has-pending-model-changes --project .\src\ReusableAccess.Infrastructure --startup-project .\src\ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build
+dotnet ef migrations script 20261125090000_AddLmsStudio 20261126093000_SeparateOfferingWorkspace --idempotent --project .\src\ReusableAccess.Infrastructure --startup-project .\src\ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build --output lms-workspace-upgrade.sql
 ```
 
 پیش از اعمال، اسکریپت SQL را روی نسخهٔ پشتیبانِ جدا بررسی کنید و تغییر نداشتن شناسه/تعداد ثبت‌نام، ارسال، فایل و نمره را مقایسه کنید. اگر خطای «ستون نامعتبر» قبلی بازگشت، نام سرور و پایگاهِ واقعی API و EF، `__EFMigrationsHistory` و وجود ستون‌های Studio را با هم بررسی کنید. `database update` روی DB دیگری یا صرف مشاهدهٔ `already up to date` تطابق schema را ثابت نمی‌کند. رشتهٔ اتصال و رازها را ارسال نکنید. هم‌زمانی Web و API جدید را رعایت کنید؛ نسخه‌های جدید و قدیم را به‌صورت مخلوط روی یک DB اجرا نکنید.

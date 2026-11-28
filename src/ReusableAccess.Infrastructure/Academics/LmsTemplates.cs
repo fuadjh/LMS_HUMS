@@ -37,6 +37,11 @@ internal sealed partial class LmsOfferings
                               where d.OfferingId == offeringId select v).SingleAsync(ct);
             prior = StudioDocuments.Read(copy).Content;
         }
+        var lessonIds = content.SelectMany(c => c.Lessons).Select(l => l.Id).ToArray();
+        var resources = (await data.Read<LearningMaterial>().Where(m => lessonIds.Contains(m.LessonId) && !m.Removed)
+            .OrderBy(m => m.Position).ThenBy(m => m.Key).ToArrayAsync(ct)).ToLookup(m => m.LessonId);
+        var featured = await data.Read<Lesson>().Where(l => lessonIds.Contains(l.Id) && l.FeaturedMaterialKey != null)
+            .ToDictionaryAsync(l => l.Id, l => l.FeaturedMaterialKey, ct);
         StudioChapter Convert(ChapterRow chapter)
         {
             var stored = hasLineage ? prior?.Chapters.FirstOrDefault(c => c.Key == chapter.TemplateItemKey) : null;
@@ -45,9 +50,11 @@ internal sealed partial class LmsOfferings
                 var previous = stored?.Lessons.FirstOrDefault(x => x.Key == l.TemplateItemKey);
                 var key = previous?.Key ?? Guid.NewGuid();
                 return new StudioLesson(key, l.Title, l.Summary, l.Body, l.Position, previous?.StartDay, previous?.EndDay,
-                    l.Files.Select(f => f.Id).ToArray(), l.CoverMediaId);
+                    l.Files.Select(f => f.Id).ToArray(), l.CoverMediaId,
+                    resources[l.Id].Select(m => new StudioResource(m.Key, m.Kind, m.Title, m.Description, m.Body, m.Alt, m.MediaId, m.CoverId)).ToArray(),
+                    featured.GetValueOrDefault(l.Id));
             }).ToArray();
-            return new(stored?.Key ?? Guid.NewGuid(), chapter.Title, chapter.Position, stored?.StartDay, stored?.EndDay, lessons, []);
+            return new(stored?.Key ?? Guid.NewGuid(), chapter.Title, chapter.Position, stored?.StartDay, stored?.EndDay, lessons, [], chapter.Summary);
         }
 
         if (input.TemplateId is null) data.Db.Add(template);

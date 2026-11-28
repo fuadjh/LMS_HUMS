@@ -95,16 +95,16 @@
                     <section class="lms-card">
                         <h2>@(ActiveMode == "admin" ? "واگذاری و مدیریت" : "پیگیری یادگیری")</h2>
                         @if (ActiveMode == "admin" && Can(LmsPermissions.Assign))
-                        { <MudButton Href="/lms/offerings/admin">ارائه‌ها و گروه‌های رسمی</MudButton> }
+                        { <MudButton Href="/lms/offerings/admin">ارائه دروس</MudButton> }
                         @if (ActiveMode != "admin" && Can(LmsPermissions.Calendar))
                         { <MudButton Href="@($"/lms/calendar/{ActiveMode}")">تقویم و اعلان‌ها</MudButton> }
                         @if (ActiveMode == "student" && Can(LmsPermissions.Learn))
                         { <MudButton Href="/lms/transcript">کارنامهٔ غیررسمی</MudButton> }
                         @if (ActiveMode == "teacher" && home.CvUrl is not null)
                         { <p><a class="lms-file" href="@home.CvUrl" target="_blank" rel="noopener noreferrer">رزومه</a></p> }
-                        @if ((ActiveMode is "student" or "teacher") && Can(LmsPermissions.OwnAvatar))
+                        @if (ActiveMode == "student" && Can(LmsPermissions.OwnAvatar))
                         {
-                            @if ((ActiveMode == "teacher" ? home.TeacherAvatar : home.StudentAvatar) is { } avatar)
+                            @if (home.StudentAvatar is { } avatar)
                             { <img class="lms-avatar" alt="تصویر پروفایل" src="@($"/bff/lms/files/{avatar:D}")" /> }
                             <MudButton OnClick="OpenAvatar">تصویر پروفایل</MudButton>
                         }

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
 using ReusableAccess.Web.Infrastructure;
@@ -47,7 +47,7 @@ public sealed class ConsoleApi(
         string uri,
         object? body,
         bool withProfile,
-        ClaimsPrincipal? principal = null)
+        ClaimsPrincipal? principal = null, CancellationToken cancellationToken = default)
     {
         principal ??= (await auth.GetAuthenticationStateAsync()).User;
 
@@ -101,13 +101,13 @@ public sealed class ConsoleApi(
 
         try
         {
-            response = await clients.CreateClient("Api").SendAsync(request);
+            response = await clients.CreateClient("Api").SendAsync(request, cancellationToken);
         }
         catch (HttpRequestException)
         {
             throw new ConsoleApiException(502, "ارتباط با API برقرار نشد.");
         }
-        catch (TaskCanceledException)
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new ConsoleApiException(504, "مهلت پاسخ API پایان یافت.");
         }
@@ -134,13 +134,13 @@ public sealed class ConsoleApi(
         throw new ConsoleApiException(status, message);
     }
 
-    public async Task<T> GetAsync<T>(string uri, bool profile = false)
+    public async Task<T> GetAsync<T>(string uri, bool profile = false, CancellationToken cancellationToken = default)
     {
         using var response = await Send(
-            HttpMethod.Get, uri, null, profile);
+            HttpMethod.Get, uri, null, profile, cancellationToken: cancellationToken);
 
         using var json = JsonDocument.Parse(
-            await response.Content.ReadAsStringAsync());
+            await response.Content.ReadAsStringAsync(cancellationToken));
 
         var data = json.RootElement.GetProperty("data")
             .Deserialize<T>(Json);

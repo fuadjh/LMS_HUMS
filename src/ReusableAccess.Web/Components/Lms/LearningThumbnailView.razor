@@ -1,0 +1,8 @@
+<div class="lesson-thumb" aria-hidden="true">
+    <img src="@LearningUi.Cover(Thumbnail)" data-learning-fallback="@Fallback" alt="" width="320" height="180" loading="lazy" />
+    @if (Thumbnail.Kind == LearningKind.Video) { <span class="thumb-mark"><LearningIcon Name="play" Size="14" /></span> }
+</div>
+@code {
+    [Parameter, EditorRequired] public LearningThumbnail Thumbnail { get; set; } = new(LearningKind.Text);
+    private string? Fallback => Thumbnail.CoverId.HasValue ? LearningUi.Default(Thumbnail.Kind) : null;
+}

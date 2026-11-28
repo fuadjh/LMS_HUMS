@@ -4,9 +4,10 @@ namespace ReusableAccess.Contracts;
 
 public sealed record StudioContent(StudioChapter[] Chapters);
 public sealed record StudioChapter(Guid Key, string Title, int Position, int? StartDay, int? EndDay,
-    StudioLesson[] Lessons, StudioAssessment[] Assessments);
+    StudioLesson[] Lessons, StudioAssessment[] Assessments, string? Summary = null);
 public sealed record StudioLesson(Guid Key, string Title, string? Summary, string? Body, int Position,
-    int? StartDay, int? EndDay, Guid[] MediaIds, Guid? CoverId);
+    int? StartDay, int? EndDay, Guid[] MediaIds, Guid? CoverId, StudioResource[]? Materials = null, Guid? FeaturedKey = null);
+public sealed record StudioResource(Guid Key, LearningKind Kind, string Title, string? Description, string? Body, string? Alt, Guid? MediaId, Guid? CoverId);
 public sealed record StudioAssessment(Guid Key, Guid? LessonKey, string Title, string? Prompt, string? Rubric,
     int MaxAttempts, decimal MaxScore, bool IsQuiz, QuizQuestionRow[]? Quiz, int? StartDay, int? DueDay, int? EndDay);
 

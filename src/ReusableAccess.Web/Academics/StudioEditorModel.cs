@@ -22,12 +22,13 @@ internal sealed class StudioChapterForm(StudioChapter c)
 {
     internal Guid Key { get; } = c.Key;
     internal string Title { get; set; } = c.Title;
+    internal string? Summary { get; set; } = c.Summary;
     internal int? StartDay { get; set; } = c.StartDay;
     internal int? EndDay { get; set; } = c.EndDay;
     internal List<StudioLessonForm> Lessons { get; } = c.Lessons.OrderBy(l => l.Position).Select(l => new StudioLessonForm(l)).ToList();
     internal StudioAssessment[] LegacyAssessments { get; } = c.Assessments ?? [];
     internal StudioChapter ToContract(int position) => new(Key, Title, position, StartDay, EndDay,
-        Lessons.Select((l, i) => l.ToContract(i + 1)).ToArray(), []);
+        Lessons.Select((l, i) => l.ToContract(i + 1)).ToArray(), [], Summary);
 
     internal static StudioChapterForm Fresh() => new(new(Guid.NewGuid(), "", 1, 0, null, [], []));
 }
@@ -42,6 +43,8 @@ internal sealed class StudioLessonForm(StudioLesson l)
     internal int? EndDay { get; set; } = l.EndDay;
     internal List<Guid> Files { get; } = [.. l.MediaIds];
     internal Guid? Cover { get; set; } = l.CoverId;
-    internal StudioLesson ToContract(int position) => new(Key, Title, Summary, Body, position, StartDay, EndDay, [.. Files], Cover);
+    internal StudioResource[] Materials { get; } = l.Materials ?? [];
+    internal Guid? FeaturedKey { get; } = l.FeaturedKey;
+    internal StudioLesson ToContract(int position) => new(Key, Title, Summary, Body, position, StartDay, EndDay, [.. Files], Cover, Materials, FeaturedKey);
     internal static StudioLessonForm Fresh(int? day) => new(new(Guid.NewGuid(), "", "", "", 1, day, null, [], null));
 }

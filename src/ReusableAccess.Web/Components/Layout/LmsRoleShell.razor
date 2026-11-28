@@ -1,3 +1,5 @@
+@using ReusableAccess.Domain.Academics
+@using ReusableAccess.Web.Components.Lms
 @using ReusableAccess.Web.Academics
 @inject ConsoleApi Api
 @inject AuthenticationStateProvider Authentication
@@ -21,7 +23,8 @@
                     @if (RoleLabel is { } label) { <small class="ra-lms-user-label">@label</small> }
                     <MudIconButton Icon="@(_dark ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
                                    aria-label="تغییر حالت روشن و تیره" OnClick="ToggleTheme" />
-                    <AccountMenu />
+                    <AccountMenu AvatarId="@(EffectiveMode == "teacher" ? _home?.TeacherAvatar : null)" AvatarSettings="@(EffectiveMode == "teacher" && _home?.Teacher == true && _home.Permissions.Contains(LmsPermissions.OwnAvatar))"
+                                 OpenAvatar="@(() => _avatarOpen = true)" />
                 </div>
             </header>
             <div class="ra-lms-body">
@@ -53,6 +56,12 @@
                 </main>
             </div>
         </div>
+        @if (EffectiveMode == "teacher" && _home is { } teacher && teacher.Permissions.Contains(LmsPermissions.OwnAvatar))
+        {
+            <LmsDialog @bind-Visible="_avatarOpen" Title="تصویر پروفایل استاد" Lead="فایل فقط از مسیر خصوصی و مجاز در دسترس است.">
+                <LmsUpload TargetId="@teacher.UserId" Purpose="MediaPurpose.InstructorAvatar" Uploaded="AvatarChanged" />
+            </LmsDialog>
+        }
     </div>
 </MudRTLProvider>
 <div id="blazor-error-ui" data-nosnippet>
@@ -65,7 +74,12 @@
     [Parameter] public RenderFragment? ChildContent { get; set; }
     private readonly MudTheme _theme = AppTheme.Create();
     private LmsHome? _home;
-    private bool _dark;
+    private bool _dark, _avatarOpen;
+    private Task AvatarChanged(FileRow row)
+    {
+        if (_home is not null) _home = _home with { TeacherAvatar = row.Id };
+        return Task.CompletedTask;
+    }
     private string? _error;
     private string EffectiveMode => _home is not { } home ? "entry" : Mode == "entry"
         ? LmsLayoutRoutes.Available(home).FirstOrDefault() ?? "entry" : LmsLayoutRoutes.Allowed(home, Mode) ? Mode : "entry";
@@ -79,12 +93,14 @@
         if (_home is not { } home) yield break;
         Link[] choices = EffectiveMode switch
         {
-            "admin" => [new("دانشکده‌ها و نیم‌سال", "/lms/admin/catalog", Icons.Material.Filled.School, LmsPermissions.CatalogRead),
-                        new("استادان و دانشجویان", "/lms/admin/people", Icons.Material.Filled.Group, LmsPermissions.PeopleRead),
-                        new("ارائه‌ها و گروه‌ها", "/lms/offerings/admin", Icons.Material.Filled.List, LmsPermissions.Assign),
+            "admin" => [new("ساختار و تقویم آموزشی", "/lms/admin/catalog", Icons.Material.Filled.School, LmsPermissions.CatalogRead),
+                        new("درس‌ها", "/lms/admin/courses", Icons.Material.Filled.Book, LmsPermissions.CatalogRead),
+                        new("استادان", "/lms/admin/teachers", Icons.Material.Filled.Group, LmsPermissions.PeopleRead),
+                        new("دانشجویان", "/lms/admin/students", Icons.Material.Filled.Group, LmsPermissions.PeopleRead),
+                        new("ارائه دروس", "/lms/offerings/admin", Icons.Material.Filled.List, LmsPermissions.Assign),
                         new("قلمروهای آموزشی", "/lms/admin/grants", Icons.Material.Filled.Security, LmsPermissions.Grant, true),
                         new("عملیات سامانه", "/lms/admin/operations", Icons.Material.Filled.Settings, LmsPermissions.Logs, true),
-                        new("نقش‌ها و مجوزها", "/console/roles", Icons.Material.Filled.ManageAccounts, LmsPermissions.Grant, true)],
+                        new("نقش‌ها و مجوزها", "/lms/admin/roles", Icons.Material.Filled.ManageAccounts, LmsPermissions.Grant, true)],
             "teacher" => [new("دروس تحت تدریس", "/lms/offerings/teacher", Icons.Material.Filled.List, LmsPermissions.Teach),
                           new("بانک الگوی محتوا", "/lms/templates", Icons.Material.Filled.Book, LmsPermissions.Template),
                           new("بانک الگوی تکلیف", "/lms/assignment-templates", Icons.Material.Filled.Assignment, LmsPermissions.Template),

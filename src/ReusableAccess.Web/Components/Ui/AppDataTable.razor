@@ -5,7 +5,7 @@
         <caption class="ra-data-table-caption">@Caption</caption>
         <thead><tr>@Columns</tr></thead>
         <tbody>
-            @foreach (var row in Items)
+            @foreach (var row in Visible)
             {
                 <tr @key="RowKey(row)">@RowCells(row)</tr>
             }
@@ -20,6 +20,17 @@ else if (Items.Count == 0)
 {
     <p class="ra-data-table-state" role="status">@EmptyText</p>
 }
+<nav class="ra-data-pager" aria-label="صفحه‌بندی جدول">
+    <label>ردیف در صفحه
+        <select disabled="@Loading" value="@Size" @onchange="ChangeSize" aria-label="تعداد ردیف در صفحه">
+            @foreach (var n in LmsTablePage.Sizes) { <option value="@n">@ReusableAccess.Web.Academics.LmsPage.Fa(n)</option> }
+        </select>
+    </label>
+    <button type="button" disabled="@(Loading || Page <= 1)" @onclick="() => Navigate(Page - 1, Size)">قبلی</button>
+    <span role="status" aria-live="polite">صفحهٔ @ReusableAccess.Web.Academics.LmsPage.Fa(Page)
+        @if (!ServerHasMore.HasValue) { <text> از @ReusableAccess.Web.Academics.LmsPage.Fa(Pages)</text> }</span>
+    <button type="button" disabled="@(Loading || Page >= Pages)" @onclick="() => Navigate(Page + 1, Size)">بعدی</button>
+</nav>
 
 @code {
     [Parameter, EditorRequired] public string Caption { get; set; } = "فهرست";
@@ -29,4 +40,30 @@ else if (Items.Count == 0)
     [Parameter, EditorRequired] public RenderFragment<TRow> RowCells { get; set; } = default!;
     [Parameter] public bool Loading { get; set; }
     [Parameter] public string EmptyText { get; set; } = "موردی برای نمایش نیست.";
+    [Parameter] public string? FilterKey { get; set; }
+    [Parameter] public int? Total { get; set; }
+    [Parameter] public bool? ServerHasMore { get; set; }
+    [Parameter] public int ServerPage { get; set; } = 1;
+    [Parameter] public int ServerSize { get; set; } = LmsTablePage.DefaultSize;
+    [Parameter] public EventCallback<LmsTablePage> PageChanged { get; set; }
+    private int _page = 1, _size = LmsTablePage.DefaultSize;
+    private string? _previousFilter;
+    private bool IsServer => (Total.HasValue || ServerHasMore.HasValue) && PageChanged.HasDelegate;
+    private int Size => IsServer ? ServerSize : _size;
+    private int Pages => ServerHasMore is { } more ? ServerPage + (more ? 1 : 0) : Math.Max(1, (int)Math.Ceiling((IsServer ? Total.GetValueOrDefault() : Items.Count) / (double)Size));
+    private int Page => IsServer ? ServerPage : Math.Min(_page, Pages);
+    private IEnumerable<TRow> Visible => IsServer ? Items : Items.Skip((Page - 1) * Size).Take(Size);
+    protected override void OnParametersSet()
+    {
+        if (_previousFilter != FilterKey) { _previousFilter = FilterKey; _page = 1; }
+        if (!IsServer) _page = Page;
+    }
+    private Task ChangeSize(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var size) && LmsTablePage.Sizes.Contains(size)
+        ? Navigate(1, size) : Task.CompletedTask;
+    private Task Navigate(int page, int size)
+    {
+        if (IsServer) return PageChanged.InvokeAsync(new LmsTablePage(page, size));
+        _page = page; _size = size;
+        return Task.CompletedTask;
+    }
 }

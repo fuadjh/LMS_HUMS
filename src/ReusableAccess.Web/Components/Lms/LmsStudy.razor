@@ -1,0 +1,12 @@
+@page "/lms/offer/{Id:guid}/{View}/learn/{LessonId:guid}"
+@page "/lms/offer/{Id:guid}/{View}/learn/{LessonId:guid}/{MaterialKey:guid}"
+@attribute [Authorize]
+<PageTitle>مطالعهٔ درس</PageTitle>
+<LearningStudent OfferingId="@Id" View="@View" LessonId="@LessonId" MaterialKey="@MaterialKey" Draft="@(Draft == true && View == "preview")" />
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [Parameter] public string View { get; set; } = "student";
+    [Parameter] public Guid LessonId { get; set; }
+    [Parameter] public Guid? MaterialKey { get; set; }
+    [SupplyParameterFromQuery(Name = "draft")] public bool? Draft { get; set; }
+}

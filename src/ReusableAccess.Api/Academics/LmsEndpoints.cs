@@ -29,6 +29,14 @@ public static class LmsEndpoints
         r.MapPost("/import/{kind}/{mediaId:guid}/{scopeId:guid}/{apply:bool}", (string kind, Guid mediaId, Guid scopeId, bool apply, ISender s, CancellationToken ct) =>
             Send(s, new ImportProfilesCommand(kind, mediaId, scopeId, apply), ct)).WithName("lms.people.import").RequireRateLimiting("lms-sensitive");
 
+        r.MapGet("/admin-tables/offerings", (Guid? termId, Guid? cohortId, string? search, int? page, int? size, ISender s, CancellationToken ct) =>
+            Send(s, new ReadAdminOfferingsQuery(new("admin", termId, cohortId, false, search), new(page ?? 1, size ?? LmsTablePage.DefaultSize)), ct)).WithName("lms.offering.table");
+        r.MapGet("/admin-tables/people/{kind}", (string kind, Guid? scopeId, string? search, int? page, int? size, ISender s, CancellationToken ct) =>
+            Send(s, new ReadAdminPeopleQuery(kind, scopeId, search, new(page ?? 1, size ?? LmsTablePage.DefaultSize)), ct)).WithName("lms.people.table");
+        r.MapGet("/academic-import/{kind}/preview", (string kind, Guid mediaId, Guid majorId, Guid? termId, ISender s, CancellationToken ct) =>
+            Send(s, new PreviewAcademicWorkbookQuery(kind, new(mediaId, majorId, termId)), ct)).WithName("lms.academic-import.preview").RequireRateLimiting("lms-sensitive");
+        r.MapPost("/academic-import/{kind}", (string kind, AcademicWorkbookInput input, ISender s, CancellationToken ct) =>
+            Send(s, new ApplyAcademicWorkbookCommand(kind, input), ct)).WithName("lms.academic-import.apply").RequireRateLimiting("lms-sensitive");
         r.MapGet("/offerings", (string view, Guid? termId, Guid? cohortId, bool? mine, string? search, ISender s, CancellationToken ct) =>
             Send(s, new GetOfferingsQuery(new(view, termId, cohortId, mine == true, search)), ct)).WithName("lms.offerings.read");
         r.MapGet("/offerings/{id:guid}", (Guid id, string view, bool? includeContent, ISender s, CancellationToken ct) =>
@@ -81,7 +89,8 @@ public static class LmsEndpoints
         {
             var file = await files.DownloadAsync(id, ct);
             // Inline only recognized image/video; document downloads are attachments, not scriptable pages.
-            var inline = file.ContentType is "image/png" or "image/jpeg" or "video/mp4";
+            var inline = file.ContentType is "image/png" or "image/jpeg" or "image/webp" or "image/gif" or
+                "video/mp4" or "video/webm" or "audio/mpeg" or "audio/wav" or "audio/ogg";
             return Results.File(file.Body, file.ContentType, inline ? null : file.Name,
                 lastModified: file.CreatedUtc, enableRangeProcessing: true);
         }).WithName("lms.file.read");
@@ -93,6 +102,15 @@ public static class LmsEndpoints
             .RequireAuthorization("PlatformAdmin").WithName("lms.sms.read");
         r.MapPost("/sms", (SmsEdit input, ISender s, CancellationToken ct) => Send(s, new SaveLmsSmsSettingsCommand(input), ct))
             .RequireAuthorization("PlatformAdmin").WithName("lms.sms.write");
+        var learning = r.MapGroup("/offerings/{id:guid}/learning");
+        learning.MapGet("/teacher", (Guid id, ISender s, CancellationToken ct) => Send(s, new GetLearningTeacherQuery(id), ct)).WithName("lms.learning.teacher");
+        learning.MapGet("/curriculum", (Guid id, string view, ISender s, CancellationToken ct) => Send(s, new GetLearningCurriculumQuery(id, view), ct)).WithName("lms.learning.curriculum");
+        learning.MapGet("/lessons/{lesson:guid}", (Guid id, Guid lesson, string view, ISender s, CancellationToken ct) => Send(s, new GetLearningLessonQuery(id, view, lesson), ct)).WithName("lms.learning.lesson");
+        learning.MapGet("/lessons/{lesson:guid}/materials/{key:guid}", (Guid id, Guid lesson, Guid key, string view, ISender s, CancellationToken ct) => Send(s, new GetLearningMaterialQuery(id, view, lesson, key), ct)).WithName("lms.learning.material");
+        learning.MapPost("/draft", (Guid id, LearningEdit edit, ISender s, CancellationToken ct) => Send(s, new SaveLearningCommand(id, edit), ct)).WithName("lms.learning.draft");
+        learning.MapPost("/publish", (Guid id, LearningPublish edit, ISender s, CancellationToken ct) => Send(s, new PublishLearningCommand(id, edit), ct)).WithName("lms.learning.publish");
+        learning.MapPost("/lessons/{lesson:guid}/completion", (Guid id, Guid lesson, LearningCompletion edit, ISender s, CancellationToken ct) =>
+            Send(s, new CompleteLearningLessonCommand(id, lesson, edit.Completed), ct)).WithName("lms.learning.completion");
         r.MapLmsStudio();
         r.MapOfferingWorkspace();
         return app;

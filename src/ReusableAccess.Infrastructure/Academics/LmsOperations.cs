@@ -28,8 +28,8 @@ internal sealed class LmsOperations(LmsData data, LmsAccess access, LmsFiles fil
             (filter.MinBytes == null || x.ReportedBytes >= filter.MinBytes) && (filter.MaxBytes == null || x.ReportedBytes <= filter.MaxBytes) &&
             (filter.State == null || x.State == filter.State) && (filter.TrackingId == null || x.Id == filter.TrackingId) &&
             (filter.ActorId == null || x.ActorId == filter.ActorId))
-            .OrderByDescending(x => x.CreatedUtc).ThenBy(x => x.Id).Skip((page - 1) * 50).Take(51).ToArrayAsync(ct);
-        return new(rows.Take(50).Select(Map).ToArray(), page, rows.Length > 50);
+            .OrderByDescending(x => x.CreatedUtc).ThenBy(x => x.Id).Skip((page - 1) * filter.Size).Take(filter.Size + 1).ToArrayAsync(ct);
+        return new(rows.Take(filter.Size).Select(Map).ToArray(), page, rows.Length > filter.Size);
     }
     private static UploadStatusRow Map(UploadAttempt x)
         => new(x.Id, x.Name, x.ReportedBytes, x.ReceivedBytes, x.State, x.Code, x.CreatedUtc, x.UpdatedUtc, x.ActorId, x.TargetId, x.Ip, x.Correlation);
@@ -43,11 +43,11 @@ internal sealed class LmsOperations(LmsData data, LmsAccess access, LmsFiles fil
         var rows = await data.Read<OperationalEvent>().Where(x => x.OccurredUtc >= cutoff && (filter.FromUtc == null || x.OccurredUtc >= filter.FromUtc) &&
             (filter.ToUtc == null || x.OccurredUtc < filter.ToUtc) && (action == "" || x.Action.Contains(action)) &&
             (filter.ActorId == null || x.ActorId == filter.ActorId) && (outcome == "" || x.Outcome == outcome))
-            .OrderByDescending(x => x.OccurredUtc).ThenBy(x => x.Id).Skip((page - 1) * 50).Take(51).Select(x =>
-                new SecurityRow(x.OccurredUtc, x.ActorId, x.Action, x.Outcome, x.ResourceId, x.Ip, x.Correlation, x.HttpStatus)).ToArrayAsync(ct);
-        return new(rows.Take(50).ToArray(), page, rows.Length > 50);
+            .OrderByDescending(x => x.OccurredUtc).ThenBy(x => x.Id).Skip((page - 1) * filter.Size).Take(filter.Size + 1).Select(x =>
+                new SecurityRow(x.OccurredUtc, x.ActorId, x.Action, x.Outcome, x.ResourceId, x.Ip, x.Correlation, x.HttpStatus, x.Id)).ToArrayAsync(ct);
+        return new(rows.Take(filter.Size).ToArray(), page, rows.Length > filter.Size);
     }
-    private static int Page(LogFilter f) => f.FromUtc > f.ToUtc || f.Page is < 1 or > 10000
+    private static int Page(LogFilter f) => f.FromUtc > f.ToUtc || f.Page is < 1 or > 10000 || !LmsTablePage.Sizes.Contains(f.Size)
         ? throw LmsError.Invalid("بازهٔ زمان یا شمارهٔ صفحه معتبر نیست.") : f.Page;
     public async Task<SmsView> SmsAsync(CancellationToken ct)
     {

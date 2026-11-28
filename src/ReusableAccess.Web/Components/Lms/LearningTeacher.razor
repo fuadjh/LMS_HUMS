@@ -1,0 +1,395 @@
+@inherits LmsPage
+@implements IDisposable
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<section class="learning-scope" aria-label="ویرایش دوره" aria-busy="@(_loading || Busy ? "true" : "false")">
+    <LearningHeader Offering="@Offering" Id="@Offering.Id" View="teacher" Title="@(_workspace?.Title ?? Offering.Course)" Summary="@_workspace?.Summary"
+                    Hero="true" ShowDraft="@(_workspace?.CanPreviewDraft == true)" Status="@PublicationLabel">
+        <Actions><a class="course-btn mint" href="@LearningUi.Offer(Offering.Id, "preview")"><LearningIcon Name="arrow" Size="15" />مشاهده نسخهٔ منتشرشده</a></Actions>
+    </LearningHeader>
+    @if (_loadError is not null || Error is not null && !_editor && !_confirm)
+    {
+        <p class="learning-toast" role="alert">@(_loadError ?? Error)</p>
+        <button type="button" class="course-btn quiet small" @onclick="Retry" disabled="@Busy">بازخوانی داده‌های دوره</button>
+    }
+    @if (_workspace is not { } workspace)
+    {
+        @if (_loading) { <p class="empty-course" role="status">در حال دریافت ساختار دوره…</p> }
+    }
+    else
+    {
+        <div class="course-stack">
+            <section class="course-card course-stack">
+                <div class="teacher-head"><div><h2 tabindex="-1" @ref="_heading">مدیریت دوره</h2>
+                    <p>ابتدا فصل‌ها و درس‌ها را تعریف کنید، سپس محتواها را به هر درس اضافه کنید.</p></div>
+                    <span class="state-label @(workspace.HasChanges ? "draft" : "done")">@PublicationLabel</span>
+                </div>
+                <div class="step-bar" role="group" aria-label="مراحل آماده‌سازی دوره">
+                    @foreach (var (step, i) in Steps.Select((value, index) => (value, index)))
+                    {
+                        <button type="button" class="course-btn quiet" @key="step.Key" aria-pressed="@(Active == step.Key ? "true" : "false")"
+                                @onclick="() => Move(step.Key)" disabled="@Busy"><b>@Fa(i + 1)</b>@step.Label</button>
+                    }
+                </div>
+            </section>
+            @if (Active == "structure")
+            {
+                <section class="course-card teacher-head">
+                    <div><h3>ساختار و خلاصه‌ها</h3><p>در این مرحله نیازی به انتخاب فایل یا تصویر نیست.</p></div>
+                    @if (workspace.CanEdit)
+                    {
+                        <div class="outline-tools">
+                            <button class="course-btn quiet small" type="button" @onclick="() => Open(LearningEditKind.Introduce)">ویرایش معرفی دوره</button>
+                            <button class="course-btn solid small" type="button" @onclick="() => Open(LearningEditKind.Chapter)"><LearningIcon Name="plus" Size="15" />افزودن فصل</button>
+                        </div>
+                    }
+                </section>
+                @foreach (var (ch, index) in workspace.Chapters.Where(ch => !ch.Removed).Select((value, i) => (value, i)))
+                {
+                    <section class="course-card outline-chapter" @key="ch.Id">
+                        <div class="outline-head">
+                            <div><h3>فصل @LearningUi.Ordinal(index): @ch.Title</h3>
+                                <p>@(ch.Summary ?? "خلاصهٔ فصل نیازمند تکمیل است.")</p>
+                                <span class="state-label @(ch.Pending ? "draft" : "done")">@(ch.Pending ? "پیش‌نویس" : ch.Published ? "منتشرشده" : "بدون تفاوت محتوایی")</span>
+                            </div>
+                            @if (workspace.CanEdit)
+                            {
+                                <div class="outline-tools">
+                                    <button type="button" class="course-btn quiet small" @onclick="() => Open(LearningEditKind.Lesson, ch)"><LearningIcon Name="plus" Size="15" />افزودن درس</button>
+                                    <button type="button" class="course-btn quiet small" @onclick="() => Open(LearningEditKind.Chapter, ch)">ویرایش فصل</button>
+                                    <button type="button" class="course-btn danger small" @onclick="() => Remove(LearningEditKind.RemoveChapter, ch.Id, null, null, ch.Title)" aria-label="@($"حذف فصل {ch.Title}")">حذف</button>
+                                </div>
+                            }
+                        </div>
+                        @if (ch.Lessons.Length == 0) { <p class="empty-course">هنوز درسی تعریف نشده است.</p> }
+                        @foreach (var (l, i) in ch.Lessons.Select((value, n) => (value, n)))
+                        {
+                            <div class="outline-row" @key="l.Id">
+                                <div><strong>درس @LearningUi.Ordinal(i): @l.Title</strong>
+                                    <span class="state-label @(l.Count > 0 ? "done" : "draft")">@(l.Count > 0 ? $"{Fa(l.Count)} محتوا" : "بدون محتوا")</span>
+                                    @if (l.NeedsReview) { <span class="state-label draft">بازبینی زمان لازم است</span> }
+                                    <p>@(l.Summary ?? "خلاصهٔ درس نیازمند تکمیل است.")</p>
+                                </div>
+                                <div class="outline-tools">
+                                    <button type="button" class="course-btn quiet small" @onclick="@(() => Move("materials", l.Id))">محتوا</button>
+                                    @if (workspace.CanEdit)
+                                    {
+                                        <button type="button" class="course-btn quiet small" @onclick="() => Open(LearningEditKind.Lesson, ch, l)" aria-label="@($"ویرایش درس {l.Title}")">ویرایش</button>
+                                        <button type="button" class="course-btn danger small" @onclick="() => Remove(LearningEditKind.RemoveLesson, ch.Id, l.Id, null, l.Title)" aria-label="@($"حذف درس {l.Title}")">حذف</button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </section>
+                }
+                <div><button type="button" class="course-btn solid" @onclick="@(() => Move("materials"))"><LearningIcon Name="arrow" />مرحلهٔ بعد: محتوای درس‌ها</button></div>
+            }
+            else if (Active == "materials")
+            {
+                @if (Selection is not { } selected)
+                {
+                    <section class="course-card course-stack"><p>برای افزودن محتوا ابتدا حداقل یک درس بسازید.</p>
+                        <div><button type="button" class="course-btn quiet" @onclick="@(() => Move("structure"))"><LearningIcon Name="back" />بازگشت به ساختار</button></div>
+                    </section>
+                }
+                else
+                {
+                    <div class="course-layout">
+                        <div class="course-stack">
+                            <section class="course-card teacher-head"><div><small>@selected.Chapter.Title</small><h3>@selected.Lesson.Title</h3><p>@selected.Lesson.Summary</p></div>
+                                @if (workspace.CanEdit && _lesson is not null)
+                                { <button class="course-btn solid small" type="button" @onclick="() => Open(LearningEditKind.Material, selected.Chapter, selected.Lesson)"><LearningIcon Name="plus" />افزودن محتوا</button> }
+                            </section>
+                            @if (_loading) { <p role="status">در حال دریافت منابع درس…</p> }
+                            @if (_lesson is { } lesson)
+                            {
+                                @if (lesson.Materials.Length == 0) { <p class="empty-course">این درس هنوز محتوایی ندارد. برای شروع «افزودن محتوا» را بزنید.</p> }
+                                @foreach (var (m, i) in lesson.Materials.Select((value, index) => (value, index)))
+                                {
+                                    <section class="course-card edit-resource" @key="m.Key">
+                                        <div class="resource-row"><LearningThumbnailView Thumbnail="@m.Thumbnail" /><div><h4>@Fa(i + 1). @m.Title</h4>
+                                            <div class="lesson-meta"><LearningType Kind="@m.Kind" /><span class="cover-label">@(m.Thumbnail.CoverId is null ? "تصویر پیش‌فرض بر اساس نوع محتوا" : "تصویر اختصاصی")</span></div>
+                                            <p>@(m.Description ?? "توضیح محتوا نیازمند تکمیل است.")</p></div></div>
+                                        <div class="edit-resource-controls">
+                                            @if (lesson.Lesson.FeaturedKey == m.Key) { <span class="state-label done">تصویر نمایندهٔ درس</span> }
+                                            @if (workspace.CanEdit)
+                                            {
+                                                @if (lesson.Lesson.FeaturedKey != m.Key)
+                                                { <button type="button" class="course-btn quiet small" @onclick="() => Feature(selected.Chapter.Id, selected.Lesson.Id, m.Key)" disabled="@Busy">انتخاب به‌عنوان تصویر درس</button> }
+                                                <button type="button" class="course-btn quiet small" @onclick="() => Open(LearningEditKind.Material, selected.Chapter, selected.Lesson, m)">ویرایش محتوا</button>
+                                                <button type="button" class="course-btn danger small" @onclick="() => Remove(LearningEditKind.RemoveMaterial, selected.Chapter.Id, selected.Lesson.Id, m.Key, m.Title)">حذف</button>
+                                            }
+                                        </div>
+                                    </section>
+                                }
+                            }
+                            <div><button type="button" class="course-btn solid" @onclick="@(() => Move("publish"))"><LearningIcon Name="arrow" />مرحلهٔ بعد: کنترل و انتشار</button></div>
+                        </div>
+                        <section class="course-card draft-list"><h3>انتخاب درس</h3>
+                            @foreach (var ch in workspace.Chapters.Where(ch => !ch.Removed && ch.Lessons.Length > 0))
+                            {
+                                <small class="chapter-list-name" @key="ch.Id">@ch.Title</small>
+                                @foreach (var l in ch.Lessons)
+                                {
+                                    <button class="course-btn quiet small" type="button" @key="l.Id" aria-pressed="@(l.Id == selected.Lesson.Id ? "true" : "false")"
+                                            @onclick="@(() => Move("materials", l.Id))">@l.Title <small>@Fa(l.Count) محتوا</small></button>
+                                }
+                            }
+                        </section>
+                    </div>
+                }
+            }
+            else
+            {
+                <section class="course-card course-stack">
+                    <div class="teacher-head"><div><h3>آماده‌سازی نسخهٔ دانشجو</h3><p>تا انتشار موفق و رسیدن زمان نمایش، پیش‌نویس جای نسخهٔ قبلی را نمی‌گیرد.</p></div>
+                        <span class="state-label">@(workspace.Version > 0 ? $"نسخهٔ منتشرشده: {Fa(workspace.Version)}" : "بدون شمارهٔ نسخهٔ جدید")</span>
+                    </div>
+                    @if (workspace.CanPublish && Pending.Length > 0)
+                    { <LmsChoice Label="محدودهٔ انتشار" Options="@Pending" @bind-Value="_publishChapter" EmptyText="همهٔ فصل‌های آمادهٔ پیش‌نویس" Disabled="@Busy" /> }
+                    <ul class="publish-check">
+                        <li><LearningIcon Name="layers" /><span>@Fa(workspace.Chapters.Count(c => !c.Removed)) فصل، @Fa(AllLessons.Length) درس و @Fa(AllLessons.Sum(l => l.Lesson.Count)) محتوا در ساختار</span></li>
+                        @foreach (var issue in Issues)
+                        {
+                            <li class="warn"><LearningIcon Name="info" /><span>@issue.Message
+                                @if (issue.Code == "introduction" && workspace.CanEdit) { <button type="button" class="course-btn small quiet" @onclick="() => Open(LearningEditKind.Introduce)">اصلاح معرفی</button> }
+                                else if (issue.LessonId is { } lessonId && issue.Code is ("material-incomplete" or "empty-lesson"))
+                                { <a class="course-btn small quiet" href="@StepUrl("materials", lessonId)">رفتن به محتوای درس</a> }
+                                else if (issue.ChapterId.HasValue) { <a class="course-btn small quiet" href="@StepUrl("structure")">رفتن به ساختار</a> }
+                            </span></li>
+                        }
+                        @if (!workspace.HasChanges) { <li><LearningIcon Name="info" />تغییر منتشرنشده‌ای وجود ندارد.</li> }
+                        else if (Issues.Length == 0) { <li><LearningIcon Name="check" />مانع انتشار برای محدودهٔ انتخاب‌شده گزارش نشده است.</li> }
+                        @if (!workspace.CanPublish) { <li><LearningIcon Name="info" />مجوز انتشار یا امکان تغییر در این نیم‌سال وجود ندارد.</li> }
+                    </ul>
+                    <div class="outline-tools">
+                        <button type="button" class="course-btn solid" @onclick="AskPublish" disabled="@(Busy || !workspace.CanPublish || !workspace.HasChanges || Issues.Length > 0)"><LearningIcon Name="check" />انتشار نسخهٔ جدید</button>
+                        <a class="course-btn quiet" href="@LearningUi.Offer(Offering.Id, "preview")"><LearningIcon Name="arrow" />مشاهده نسخهٔ منتشرشده</a>
+                    </div>
+                </section>
+            }
+        </div>
+    }
+</section>
+
+<NavigationLock ConfirmExternalNavigation="@(_editor && !Busy)" OnBeforeInternalNavigation="ConfirmNavigation" />
+<AppModal Visible="@_editor" VisibleChanged="CloseEditor" Title="@_editorTitle" Width="MaxWidth.Medium" CssClass="course-dialog" Busy="@FormBusy" AllowEscape="true">
+    <ChildContent>
+        <EditForm Model="@_form" OnSubmit="Submit" id="@_formId">
+            <div class="edit-fields">
+                @if (_form.Kind == LearningEditKind.Introduce)
+                { <label>معرفی کوتاه دوره<textarea maxlength="320" required @bind="_form.Summary"></textarea></label> }
+                else
+                {
+                    @if (_form.Kind == LearningEditKind.Material)
+                    {
+                        <label>نوع محتوا<select @bind="_form.MediaKind" @bind:after="ResetMainFile" disabled="@(_form.MaterialKey.HasValue || FormBusy)">
+                            @foreach (var kind in Enum.GetValues<LearningKind>().Where(k => k != LearningKind.LegacyFile || _form.MediaKind == k))
+                            { <option value="@kind">@LearningUi.Label(kind)</option> }
+                        </select></label>
+                    }
+                    <label>عنوان<input maxlength="90" required @bind="_form.Title" /></label>
+                    <label>@(_form.Kind == LearningEditKind.Material ? "توضیح کوتاه محتوا" : "خلاصه برای فهرست دانشجو")
+                        <textarea maxlength="@(_form.Kind == LearningEditKind.Material ? 450 : 320)" required @bind="_form.Summary"></textarea></label>
+                }
+                @if (_form.Kind is LearningEditKind.Chapter or LearningEditKind.Lesson)
+                {
+                    <PersianDateField Label="آغاز نمایش (اختیاری)" @bind-Value="_form.Opens" PreferredTime="@(new TimeOnly(8, 0))" Disabled="@Busy" />
+                    <PersianDateField Label="پایان انحصاری نمایش (اختیاری)" @bind-Value="_form.Closes" Disabled="@Busy" />
+                }
+                @if (_form.Kind == LearningEditKind.Material)
+                {
+                    @if (_form.MediaKind == LearningKind.Text) { <label>متن محتوا<textarea maxlength="12000" required @bind="_form.Body"></textarea></label> }
+                    else if (_workspace?.CanUpload == true && _form.MediaKind != LearningKind.LegacyFile)
+                    {
+                        <div><strong>@(_form.MaterialKey.HasValue ? "فایل جایگزین (اختیاری)" : "فایل اصلی")</strong>
+                            <LmsUpload @key="_form.MediaKind" Purpose="MediaPurpose.CurriculumFile" AcceptOverride="@Extensions" TargetId="@Offering.Id" Disabled="@Busy" Uploaded="MainStored" TransferChanged="MainTransfer" />
+                            @if (_form.File is { } file) { <p role="status">فایل آماده: <bdi>@file.Name</bdi></p> }
+                        </div>
+                    }
+                    @if (_form.MediaKind == LearningKind.Image) { <label>متن جایگزین تصویر (اختیاری)<input maxlength="250" @bind="_form.Alt" /></label> }
+                    <div><strong>تصویر بندانگشتی اختصاصی (اختیاری)</strong>
+                        @if (_workspace?.CanUpload == true)
+                        { <LmsUpload Purpose="MediaPurpose.CurriculumCover" TargetId="@Offering.Id" Disabled="@Busy" Uploaded="CoverStored" TransferChanged="CoverTransfer" /> }
+                        @if (_form.Cover is { } cover) { <p role="status">کاور آماده: <bdi>@cover.Name</bdi></p> }
+                        <p class="edit-hint">بدون تصویر اختصاصی، تصویر پیش‌فرض نوع محتوا نمایش داده می‌شود. نسبت پیشنهادی ۱۶:۹.</p>
+                        @if (_form.MaterialKey.HasValue || _form.Cover is not null)
+                        { <label class="mini-check"><input type="checkbox" @bind="_form.RemoveCover" @bind:after="CoverCleared" />استفاده از تصویر پیش‌فرض</label> }
+                    </div>
+                }
+            </div>
+        </EditForm>
+        @if (Error is not null) { <div class="edit-error" role="alert">@Error</div> }
+    </ChildContent>
+    <Actions>
+        <button type="submit" form="@_formId" class="course-btn solid" disabled="@FormBusy">ذخیره پیش‌نویس</button>
+        <button type="button" class="course-btn quiet" @onclick="() => CloseEditor(false)" disabled="@FormBusy">انصراف</button>
+    </Actions>
+</AppModal>
+<AppModal Visible="@_confirm" VisibleChanged="SetConfirm" Title="@_confirmTitle" CssClass="course-dialog" Width="MaxWidth.Medium" Busy="@Busy" AllowEscape="true">
+    <ChildContent><p>@_confirmText</p>@if (Error is not null) { <div class="edit-error" role="alert">@Error</div> }</ChildContent>
+    <Actions><button type="button" class="course-btn solid" @onclick="Accept" disabled="@Busy">تأیید</button>
+        <button type="button" class="course-btn quiet" @onclick="() => SetConfirm(false)" disabled="@Busy">انصراف</button></Actions>
+</AppModal>
+
+@code {
+    [Parameter, EditorRequired] public OfferingRow Offering { get; set; } = default!;
+    [Parameter] public string? Step { get; set; }
+    [Parameter] public Guid? SelectedLesson { get; set; }
+    private static readonly (string Key, string Label)[] Steps = [("structure", "ساختار دوره"), ("materials", "محتوای درس‌ها"), ("publish", "کنترل و انتشار")];
+    private string Active => Step is "materials" or "publish" ? Step : "structure";
+    private string Root => $"offerings/{Offering.Id:D}/learning";
+    private string PublicationLabel => _workspace?.HasChanges == true ? "تغییرات منتشرنشده" : _workspace?.Chapters.Any(c => c.Published) == true || _workspace?.Version > 0 ? "همسان با نسخهٔ منتشرشده" : "هنوز نسخه‌ای منتشر نشده است";
+    private sealed record Entry(LearningChapterRow Chapter, LearningLessonRow Lesson);
+    private Entry[] AllLessons => (_workspace?.Chapters ?? []).Where(c => !c.Removed).SelectMany(c => c.Lessons.Select(l => new Entry(c, l))).ToArray();
+    private Entry? Selection => AllLessons.FirstOrDefault(l => l.Lesson.Id == SelectedLesson) ?? AllLessons.FirstOrDefault();
+    private CatalogRow[] Pending => (_workspace?.Chapters ?? []).Where(c => c.Pending)
+        .Select(c => new CatalogRow(c.Id, c.Title + (c.Removed ? " · حذف در انتظار انتشار" : ""))).ToArray();
+    private LearningIssue[] Issues => (_workspace?.Issues ?? []).Where(i => _publishChapter is null || i.ChapterId is null || i.ChapterId == _publishChapter).ToArray();
+    private readonly string _formId = "learning-editor-" + Guid.NewGuid().ToString("N");
+    private ElementReference _heading;
+    private (Guid Id, string Step, Guid? Lesson)? _route;
+    private Guid? _publishChapter;
+    private LearningTeacherView? _workspace;
+    private LearningLessonView? _lesson;
+    private CancellationTokenSource? _cts;
+    private bool _loading, _focus, _editor, _confirm;
+    private string? _loadError;
+    private string _editorTitle = "", _confirmTitle = "", _confirmText = "";
+    private Func<Task>? _confirmed;
+    private Editor _form = new();
+    private sealed class Editor
+    {
+        public LearningEditKind Kind { get; init; }
+        public Guid? ChapterId { get; init; }
+        public Guid? LessonId { get; init; }
+        public Guid? MaterialKey { get; init; }
+        public string Title { get; set; } = "";
+        public string Summary { get; set; } = "";
+        public string? Opens { get; set; }
+        public string? Closes { get; set; }
+        public string? Body { get; set; }
+        public string? Alt { get; set; }
+        public LearningKind MediaKind { get; set; } = LearningKind.Video;
+        public FileRow? File { get; set; }
+        public FileRow? Cover { get; set; }
+        public bool RemoveCover { get; set; }
+    }
+    private bool _mainTransfer, _coverTransfer;
+    private bool FormBusy => Busy || _mainTransfer || _coverTransfer;
+    private Task MainTransfer(bool active) { _mainTransfer = active; return Task.CompletedTask; }
+    private Task CoverTransfer(bool active) { _coverTransfer = active; return Task.CompletedTask; }
+    private string Extensions => _form.MediaKind switch {
+        LearningKind.Video => ".mp4,.webm", LearningKind.Pdf => ".pdf", LearningKind.Audio => ".mp3,.wav,.ogg", LearningKind.Image => ".png,.jpg,.jpeg,.webp,.gif", _ => ""
+    };
+    private Task MainStored(FileRow f) { _form.File = f; return Task.CompletedTask; }
+    private Task CoverStored(FileRow f) { _form.Cover = f; _form.RemoveCover = false; return Task.CompletedTask; }
+    private void ResetMainFile() => _form.File = null;
+    private void CoverCleared() { if (_form.RemoveCover) _form.Cover = null; }
+    private string StepUrl(string step, Guid? lesson = null) => LearningUi.Offer(Offering.Id, "teacher") + $"&step={step}" + (lesson is { } id ? $"&lesson={id:D}" : "");
+    private void Move(string step, Guid? lesson = null) => Navigation.NavigateTo(StepUrl(step, lesson));
+    protected override Task OnParametersSetAsync()
+    {
+        var route = (Offering.Id, Active, SelectedLesson);
+        if (_route == route) return Task.CompletedTask;
+        var clear = _route?.Id != route.Id;
+        _route = route;
+        if (clear) { _workspace = null; _publishChapter = null; }
+        _editor = _confirm = false;
+        return Refresh(focus: true);
+    }
+    private async Task Refresh(bool focus = false)
+    {
+        _cts?.Cancel(); _cts?.Dispose(); _cts = new();
+        var ct = _cts.Token;
+        _loading = true; _lesson = null; _loadError = null;
+        try
+        {
+            var data = await Get<LearningTeacherView>($"{Root}/teacher", ct);
+            ct.ThrowIfCancellationRequested();
+            _workspace = data;
+            if (_publishChapter is { } chapter && Pending.All(c => c.Id != chapter)) _publishChapter = null;
+            if (Active == "materials" && Selection is { } s)
+            {
+                var context = data.CanPreviewDraft ? "draft" : "preview";
+                var l = await Get<LearningLessonView>($"{Root}/lessons/{s.Lesson.Id:D}?view={context}", ct);
+                ct.ThrowIfCancellationRequested(); _lesson = l;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (ConsoleApiException e) { if (!ct.IsCancellationRequested) _loadError = e.Message; }
+        finally { if (!ct.IsCancellationRequested) { _loading = false; _focus = focus; } }
+    }
+    private void Open(LearningEditKind kind, LearningChapterRow? chapter = null, LearningLessonRow? lesson = null, LearningMaterialRow? m = null)
+    {
+        if (Busy || _workspace?.CanEdit != true) return;
+        _editorTitle = kind switch {
+            LearningEditKind.Introduce => "ویرایش معرفی دوره", LearningEditKind.Chapter => chapter is null ? "افزودن فصل" : "ویرایش فصل",
+            LearningEditKind.Lesson => lesson is null ? "افزودن درس" : "ویرایش درس", _ => m is null ? "افزودن محتوا" : "ویرایش محتوا"
+        };
+        var dates = kind == LearningEditKind.Chapter ? (chapter?.OpensUtc, chapter?.ClosesUtc) : (lesson?.OpensUtc, lesson?.ClosesUtc);
+        _form = new Editor { Kind = kind, ChapterId = chapter?.Id, LessonId = lesson?.Id, MaterialKey = m?.Key,
+            Title = m?.Title ?? (kind == LearningEditKind.Chapter ? chapter?.Title : lesson?.Title) ?? "",
+            Summary = (kind switch { LearningEditKind.Introduce => _workspace.Summary, LearningEditKind.Chapter => chapter?.Summary,
+                LearningEditKind.Lesson => lesson?.Summary, _ => m?.Description }) ?? "",
+            Body = m?.EditableBody, Alt = m?.Alt, MediaKind = m?.Kind ?? LearningKind.Video, Opens = DateInput(dates.Item1), Closes = DateInput(dates.Item2) };
+        ClearError(); _editor = true;
+    }
+    private Task Submit(EditContext context) => FormBusy ? Task.CompletedTask : Run(async () =>
+ {
+     if (_workspace is not { CanEdit: true } current || !_editor) return;
+     var f = _form;
+
+     _ = await Post<LearningSaved>($"{Root}/draft", new LearningEdit(
+         current.Revision, f.Kind, f.ChapterId, f.LessonId, f.MaterialKey,
+         f.Title, f.Summary, f.Body, f.Alt, f.MediaKind, f.File?.Id,
+         f.Cover is not null ? LearningCoverAction.Replace
+             : f.RemoveCover ? LearningCoverAction.Remove : LearningCoverAction.Keep,
+         f.Cover?.Id, AvailabilityDate(f.Opens), AvailabilityDate(f.Closes, true)));
+
+     _editor = false;
+     Snack.Add("پیش‌نویس ذخیره شد.", Severity.Success);
+     await Refresh(true);
+ });
+    private Task Retry() { ClearError(); return Refresh(true); }
+    private Task CloseEditor(bool open) { _editor = open; return Task.CompletedTask; }
+    private Task SetConfirm(bool open) { _confirm = open; if (!open) _confirmed = null; return Task.CompletedTask; }
+    private void Remove(LearningEditKind kind, Guid chapter, Guid? lesson, Guid? key, string title)
+    {
+        if (_workspace is not { CanEdit: true } model) return;
+        Confirm("حذف از پیش‌نویس", $"«{title}» از پیش‌نویس حذف می‌شود؛ نسخهٔ دانشجو تا انتشار بعدی تغییر نمی‌کند.", async () =>
+        { _ = await Post<LearningSaved>($"{Root}/draft", new LearningEdit(model.Revision, kind, chapter, lesson, key)); });
+    }
+    private Task Feature(Guid chapter, Guid lesson, Guid key) => Run(async () =>
+    {
+        if (_workspace is not { CanEdit: true } model) return;
+        _ = await Post<LearningSaved>($"{Root}/draft", new LearningEdit(model.Revision, LearningEditKind.Feature, chapter, lesson, key));
+        await Refresh();
+    });
+    private void AskPublish()
+    {
+        if (_workspace is not { CanPublish: true, HasChanges: true } model || Issues.Length > 0) return;
+        var chapter = _publishChapter;
+        Confirm("انتشار نسخهٔ جدید", "پس از تأیید و در بازهٔ نمایش، نسخهٔ تازه برای دانشجوی مجاز قابل مشاهده می‌شود.", async () =>
+        { _ = await Post<LearningPublished>($"{Root}/publish", new LearningPublish(model.Revision, chapter)); });
+    }
+    private void Confirm(string title, string text, Func<Task> action)
+    { ClearError(); _confirmTitle = title; _confirmText = text; _confirmed = action; _confirm = true; }
+    private Task Accept() => Run(async () =>
+    {
+        if (_confirmed is { } action) await action();
+        _confirm = false; _confirmed = null; await Refresh(true);
+    });
+    private async Task ConfirmNavigation(LocationChangingContext ctx)
+    {
+        if (_editor && (FormBusy || !await JS.InvokeAsync<bool>("confirm", "از تغییرات ذخیره‌نشده خارج می‌شوید؟"))) ctx.PreventNavigation();
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focus) return;
+        _focus = false;
+        try { await _heading.FocusAsync(preventScroll: true); } catch (Exception e) when (e is JSException or InvalidOperationException) { }
+    }
+    public void Dispose() { _cts?.Cancel(); _cts?.Dispose(); }
+}

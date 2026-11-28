@@ -107,9 +107,20 @@ internal sealed class LmsEnrollments(LmsData data, LmsAccess access, LmsOffering
         LmsData.Open(lesson.Info.Term, now);
         if (!PublishedLesson(lesson, now)) throw LmsError.Missing();
         var mine = await access.ActiveEnrollment(lesson.Chapter.OfferingId, ct);
-        if (!await data.Read<LessonProgress>().AnyAsync(x => x.LessonId == lessonId && x.EnrollmentId == mine.Id, ct))
-            data.Db.Add(new LessonProgress { LessonId = lessonId, EnrollmentId = mine.Id, CompletedUtc = now });
+        await SetCompletion(data, mine.Id, lesson.Lesson.StableLessonId ?? lessonId, true, ct);
         return await data.Finish(tx, true, lessonId, ct);
+    }
+
+    internal static async Task SetCompletion(LmsData data, Guid enrollment, Guid stableLesson, bool completed, CancellationToken ct)
+    {
+        var row = await data.Db.Set<LessonProgress>().SingleOrDefaultAsync(p => p.EnrollmentId == enrollment && p.LessonId == stableLesson, ct);
+        if (row is null)
+        {
+            if (completed) data.Db.Add(new LessonProgress { EnrollmentId = enrollment, LessonId = stableLesson, CompletedUtc = data.Now });
+            return;
+        }
+        if (completed) row.ClearedUtc = null;
+        else row.ClearedUtc ??= data.Now; // keep the existing completion record and original timestamp
     }
 
     public async Task<EnrollmentHistoryRow[]> HistoryAsync(Guid enrollmentId, string view, CancellationToken ct)

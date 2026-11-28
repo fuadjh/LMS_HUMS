@@ -2,43 +2,39 @@
 @attribute [Authorize]
 @inherits LmsPage
 
-<PageTitle>اشخاص آموزشی</PageTitle>
+<PageTitle>@Heading</PageTitle>
 <div class="lms lms-admin">
-    <header class="lms-head"><h1>استادان و دانشجویان</h1><p>یک کد ملی، یک حساب. تغییر پروفایلْ نقش دیگر فرد را تغییر نمی‌دهد.</p><a href="/lms" style="color:white">میز کار</a></header>
-    <div class="lms-card">
-        <div class="lms-row">
-            <MudButton Variant="@(_kind == "teacher" ? Variant.Filled : Variant.Text)" OnClick="Teachers" Disabled="@Busy">استادان</MudButton>
-            <MudButton Variant="@(_kind == "student" ? Variant.Filled : Variant.Text)" OnClick="Students" Disabled="@Busy">دانشجویان</MudButton>
-            @if (Can(LmsPermissions.PeopleWrite)) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Open(null)">افزودن / ویرایش با کد ملی</MudButton> }
-            @if (Can(LmsPermissions.Import)) { <MudButton Variant="Variant.Outlined" OnClick="StartImport">ورود Excel</MudButton> }
-        </div>
-        <div class="lms-row">
-            <label>نام، شماره دانشجویی یا گروه<input @bind="_search" maxlength="80" /></label>
+    <header class="lms-head"><h1>@Heading</h1><p>یک کد ملی، یک حساب. تغییر پروفایلْ نقش دیگر فرد را تغییر نمی‌دهد.</p><a href="/lms" style="color:white">میز کار</a></header>
+    @if (Error is not null && !_edit && !_import && !_history && !_toggle) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    <section class="lms-card">
+        <div class="ra-academic-tools">
+            <label>@(_kind == "student" ? "نام یا شمارهٔ دانشجویی" : "نام یا گروه آموزشی")<input type="search" @bind="_search" maxlength="80" /></label>
             <LmsChoice Label="فیلتر قلمرو" Options="@Choices" @bind-Value="_filter" EmptyText="همهٔ مجازها" />
             <MudButton Disabled="@Busy" OnClick="Search">جستجو</MudButton>
+            @if (Can(LmsPermissions.PeopleWrite)) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Open(null)">افزودن</MudButton> }
+            @if (Can(LmsPermissions.Import) && Can(LmsPermissions.PeopleWrite)) { <MudButton Variant="Variant.Outlined" OnClick="StartImport">ورود از اکسل</MudButton> }
         </div>
-    </div>
-    @if (Error is not null && !_edit && !_import && !_history && !_toggle) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
-    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
-    <div class="lms-grid">
-        @foreach (var p in _people)
-        {
-            <article class="lms-card" @key="p.UserId">
-                <h2>@p.DisplayName</h2><p>@p.Label @p.Classification</p>
-                <p class="lms-muted">حساب: @(p.AccountActive ? "فعال" : "غیرفعال") · پروفایل: @(p.ProfileActive ? "فعال" : "غیرفعال") @p.Number</p>
-                @if (p.CvUrl is not null) { <a class="lms-file" href="@p.CvUrl" target="_blank" rel="noopener noreferrer">رزومهٔ خارجی</a> }
-                <div class="lms-row">
+        <AppDataTable TRow="PeopleRow" Caption="@Heading" Items="@_page.Rows" RowKey="@(p => p.UserId)" Loading="@Busy"
+                      Total="@_page.Total" ServerPage="@_page.Page" ServerSize="@_page.Size" PageChanged="Navigate" EmptyText="پروفایل مطابق فیلتر یافت نشد.">
+            <Columns><th scope="col">نام</th><th scope="col">@(_kind == "student" ? "ورودی / شمارهٔ دانشجویی" : "رشته / گروه آموزشی")</th>
+                <th scope="col">وضعیت</th><th scope="col">عملیات</th></Columns>
+            <RowCells Context="p">
+                <td><strong>@p.DisplayName</strong>
+                    @if (p.CvUrl is not null) { <br /><a class="lms-file" href="@p.CvUrl" target="_blank" rel="noopener noreferrer">رزومه</a> }
+                </td>
+                <td>@Fa(p.Label)<br /><bdi>@Fa(_kind == "student" ? p.Number : p.Classification)</bdi></td>
+                <td>حساب: @(p.AccountActive ? "فعال" : "غیرفعال")<br />پروفایل: @(p.ProfileActive ? "فعال" : "غیرفعال")</td>
+                <td>
                     @if (Can(LmsPermissions.PeopleWrite))
                     {
                         <MudButton OnClick="() => Open(p)">ویرایش</MudButton>
                         @if (p.ProfileActive || _kind == "teacher") { <MudButton OnClick="() => OpenToggle(p)">@(p.ProfileActive ? "غیرفعال‌کردن" : "فعال‌کردن")</MudButton> }
                     }
                     @if (_kind == "student") { <MudButton OnClick="() => History(p.UserId)">سوابق تحصیل</MudButton> }
-                </div>
-            </article>
-        }
-    </div>
-    @if (_people.Length == 0 && !Busy) { <p>پروفایل مطابق فیلتر یافت نشد.</p> }
+                </td>
+            </RowCells>
+        </AppDataTable>
+    </section>
 </div>
 <LmsDialog @bind-Visible="_edit" Title="@(_kind == "student" ? "پروندهٔ دانشجو" : "پروفایل استاد")" Busy="@Busy" Error="@Error" Lead="پس از استعلام، حساب موجود بازنویسی نمی‌شود. انتقال دانشجو پروندهٔ قبلی را می‌بندد و تدریس او را تغییر نمی‌دهد.">
     <div class="lms-grid">
@@ -88,19 +84,25 @@
     </div>
     @if (_preview.Length > 0)
     {
-        <div class="lms-table-box"><table class="lms-table"><thead><tr><th>ردیف</th><th>شناسه پوشیده</th><th>وضعیت</th><th>جزئیات</th></tr></thead><tbody>
-            @foreach (var r in _preview) { <tr><td>@Fa(r.Line)</td><td><bdi>@r.MaskedNationalId</bdi></td><td>@r.Status</td><td>@r.Detail</td></tr> }
-        </tbody></table></div>
+        <AppDataTable TRow="ImportRow" Items="@_preview" RowKey="@(x => x.Line)" Caption="پیش‌نمایش ورود پروفایل‌ها">
+            <Columns><th scope="col">ردیف</th><th scope="col">شناسهٔ پوشیده</th><th scope="col">وضعیت</th><th scope="col">جزئیات</th></Columns>
+            <RowCells Context="r"><td>@Fa(r.Line)</td><td><bdi>@r.MaskedNationalId</bdi></td><td>@r.Status</td><td>@r.Detail</td></RowCells>
+        </AppDataTable>
     }
 </LmsDialog>
 
 @code {
     private LmsHome? _home;
     private CatalogRow[] _majors = [], _cohorts = [];
-    private PeopleRow[] _people = [];
+    [Parameter] public string Kind { get; set; } = "teacher";
+    private string _kind => Kind == "student" ? "student" : "teacher";
+    private string Heading => _kind == "student" ? "دانشجویان" : "استادان";
+    private LmsTableSlice<PeopleRow> _page = new([], 0, 1, 15);
+    private string _searchApplied = "";
+    private Guid? _filterApplied;
     private StudyRow[] _records = [];
     private ImportRow[] _preview = [];
-    private string _kind = "teacher", _search = "", _national = "", _first = "", _last = "", _organization = "", _email = "", _mobile = "", _password = "", _number = "", _classification = "", _cv = "";
+    private string _search = "", _national = "", _first = "", _last = "", _organization = "", _email = "", _mobile = "", _password = "", _number = "", _classification = "", _cv = "";
     private Guid? _filter, _scope, _excel, _importScope;
     private ProbeResult? _probe;
     private PeopleRow? _target;
@@ -109,11 +111,14 @@
     private string ScopeLabel => _kind == "student" ? "ورودی رشته و مقطع" : "رشتهٔ وابستگی استاد";
     private bool Can(string permission) => _home?.Permissions.Contains(permission) == true;
     protected override Task OnInitializedAsync() => Run(async () => { _home = await Get<LmsHome>("me"); _majors = await Get<CatalogRow[]>("catalog/majors"); _cohorts = await Get<CatalogRow[]>("catalog/cohorts"); await LoadPeople(); });
-    private Task Teachers() => Change("teacher");
-    private Task Students() => Change("student");
-    private Task Change(string kind) => Run(async () => { _kind = kind; _filter = null; _search = ""; await LoadPeople(); });
-    private async Task LoadPeople() => _people = await Get<PeopleRow[]>($"people/{_kind}?search={Q(_search)}" + (_filter is { } s ? $"&scopeId={s:D}" : ""));
-    private Task Search() => Run(LoadPeople);
+    private Task Navigate(LmsTablePage page) => Run(() => LoadPeople(page));
+    private async Task LoadPeople(LmsTablePage? page = null)
+    {
+        var p = page ?? new LmsTablePage(_page.Page, _page.Size);
+        _page = await Get<LmsTableSlice<PeopleRow>>($"admin-tables/people/{_kind}?search={Q(_searchApplied)}&page={p.Page}&size={p.Size}" +
+            (_filterApplied is { } s ? $"&scopeId={s:D}" : ""));
+    }
+    private Task Search() => Run(async () => { _searchApplied = _search; _filterApplied = _filter; await LoadPeople(new(1, _page.Size)); });
     private void Open(PeopleRow? row)
     {
         _probe = null; _scope = row is null ? _filter : _kind == "student" ? row.CohortId : row.MajorId;

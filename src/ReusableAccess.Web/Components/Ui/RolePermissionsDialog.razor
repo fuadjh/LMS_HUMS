@@ -1,4 +1,4 @@
-﻿@inherits ReusableAccess.Web.Ui.UiPageBase
+@inherits ReusableAccess.Web.Ui.UiPageBase
 @inject AccessCatalogService Catalog
 
 
@@ -20,29 +20,14 @@
         از @_model.Items.Count
     </MudText>
 
-    @foreach (var group in _model.Items.Where(Matches)
-        .GroupBy(x => string.IsNullOrWhiteSpace(x.Category) ? "سایر" : x.Category))
-    {
-        <section class="ra-permission-group">
-            <MudText Typo="Typo.subtitle1">@group.Key</MudText>
-            @foreach (var permission in group)
-            {
-                <MudCheckBox T="bool" @key="permission.Key"
-                             @bind-Value="permission.IsSelected"
-                             Disabled="@Busy" Color="Color.Primary">
-                    <span dir="ltr">@permission.Key</span>
-                    <span> — @permission.Description</span>
-                </MudCheckBox>
-            }
-        </section>
-    }
-
-    @if (_ready && !_model.Items.Any(Matches))
-    {
-        <MudAlert Severity="Severity.Info" Class="mt-4">
-            مجوزی مطابق جست‌وجو پیدا نشد.
-        </MudAlert>
-    }
+    <AppDataTable @key="RoleId" TRow="PermissionRow" Caption="فهرست مجوزها" Items="@(_model.Items.Where(Matches).OrderBy(x => x.Category).ThenBy(x => x.Key).ToArray())"
+                  RowKey="@(x => x.Key)" Loading="@Busy" FilterKey="@_query" EmptyText="مجوزی مطابق جست‌وجو پیدا نشد.">
+        <Columns><th scope="col">انتخاب</th><th scope="col">کلید</th><th scope="col">گروه</th><th scope="col">توضیح</th></Columns>
+        <RowCells Context="permission">
+            <td><MudCheckBox T="bool" @bind-Value="permission.IsSelected" Disabled="@Busy" aria-label="@permission.Key" /></td>
+            <td><bdi>@permission.Key</bdi></td><td>@permission.Category</td><td>@permission.Description</td>
+        </RowCells>
+    </AppDataTable>
 </AppEditDialog>
 
 @code {

@@ -40,13 +40,13 @@ internal sealed class StudioTemplates(LmsData data, LmsAccess access, StudioFlag
     private IQueryable<CatalogCourse> AllowedCourses()
     {
         var actor = access.ActorId;
-        var ownFaculty = from i in data.Read<InstructorProfile>()
+        var ownMajor = from i in data.Read<InstructorProfile>()
                          join m in data.Read<Major>() on i.MajorId equals m.Id
                          where i.Id == actor && i.Active && m.Active
-                         select m.FacultyId;
+                         select m;
         return from c in data.Read<CatalogCourse>()
                join f in data.Read<Faculty>() on c.FacultyId equals f.Id
-               where c.Active && f.Active && (ownFaculty.Contains(c.FacultyId) ||
+               where c.Active && f.Active && (ownMajor.Any(m => c.MajorId == m.Id || c.MajorId == null && c.FacultyId == m.FacultyId) ||
                    data.Read<Offering>().Any(o => o.CourseId == c.Id && o.LeadId == actor && o.Active))
                select c;
     }
@@ -55,7 +55,7 @@ internal sealed class StudioTemplates(LmsData data, LmsAccess access, StudioFlag
     {
         await access.AsTeacher(LmsPermissions.Template, ct);
         return await AllowedCourses().OrderBy(x => x.Code).ThenBy(x => x.Id)
-            .Select(x => new CatalogRow(x.Id, x.Title, x.Code, x.FacultyId, null, 0, TermSeason.Mehr, null, true, false))
+            .Select(x => new CatalogRow(x.Id, x.Title, x.Code, x.MajorId, x.FacultyId, 0, TermSeason.Mehr, null, true, false))
             .Take(500).ToArrayAsync(ct);
     }
 
@@ -200,6 +200,16 @@ internal sealed class StudioTemplates(LmsData data, LmsAccess access, StudioFlag
         {
             if (lesson.MediaIds.Any(id => !media.TryGetValue(id, out var m) || m.Purpose is not (MediaPurpose.TemplateMaterial or MediaPurpose.LessonMaterial)))
                 throw LmsError.Invalid("دست‌کم یک پیوست ذخیره یا به این قالب اختصاص نیافته است.");
+            foreach (var material in lesson.Materials ?? [])
+            {
+                if (material.MediaId is { } file && (!media.TryGetValue(file, out var row) ||
+                    row.Purpose is not (MediaPurpose.CurriculumFile or MediaPurpose.TemplateMaterial or MediaPurpose.LessonMaterial) ||
+                    LearningKinds.FromExtension(row.Extension) != material.Kind))
+                    throw LmsError.Invalid("فایل اصلی یکی از منابع نوع‌دار به قالب اختصاص نیافته است.");
+                if (material.CoverId is { } thumb && (!media.TryGetValue(thumb, out var picture) ||
+                    picture.Purpose is not (MediaPurpose.CurriculumCover or MediaPurpose.TemplateCover) || !LearningKinds.IsCover(picture.Extension)))
+                    throw LmsError.Invalid("کاور یکی از منابع نوع‌دار به قالب اختصاص نیافته است.");
+            }
             if (lesson.CoverId is { } cover && (!media.TryGetValue(cover, out var image) || image.Purpose != MediaPurpose.TemplateCover ||
                 !lesson.MediaIds.Any(id => media[id].Extension == ".mp4")))
                 throw LmsError.Invalid("کاور فقط برای درسک دارای ویدئو و از نوع کاور اختصاص‌یافته مجاز است.");

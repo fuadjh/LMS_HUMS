@@ -47,7 +47,7 @@ public static class AcademicRules
         => (begin is null || now >= begin.Value) && (end is null || now < end.Value);
 
     public static bool CanReadChapter(DateTimeOffset now, Chapter chapter)
-        => chapter.Active && chapter.PublishedUtc is not null && Inside(now, chapter.VisibleFromUtc, chapter.VisibleUntilUtc);
+        => chapter.Active && !chapter.Retired && chapter.PendingBaseId is null && chapter.PublishedUtc is not null && Inside(now, chapter.VisibleFromUtc, chapter.VisibleUntilUtc);
 
     public static bool CanReadLesson(DateTimeOffset now, Chapter chapter, Lesson lesson)
         => lesson.Active && !lesson.NeedsAvailabilityReview && lesson.ChapterId == chapter.Id &&

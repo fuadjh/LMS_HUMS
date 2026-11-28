@@ -30,7 +30,7 @@ public sealed partial class LmsPersistenceTests
         var chapter = new Chapter { OfferingId = offer.Id, Title = "فصل", Position = 1, Active = true,
             PublishedUtc = now.AddDays(-1), VisibleFromUtc = now.AddHours(-2), VisibleUntilUtc = now.AddDays(5) };
         var session = new LessonSession { OfferingId = offer.Id, Title = "جلسهٔ قدیم", OpensUtc = now.AddHours(1), Active = true };
-        db.AddRange(teacher, student, faculty, major, degree, program, cohort, study, course, term, offer, enrollment, chapter, session,
+        db.AddRange(teacher, student, faculty, major, degree, program, cohort, study, term,
             new StudentProfile { Id = student.Id, Active = true }, new InstructorProfile { Id = teacher.Id, MajorId = major.Id, Active = true });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
@@ -39,6 +39,16 @@ public sealed partial class LmsPersistenceTests
         var submission = Guid.NewGuid(); var grade = Guid.NewGuid();
         // Write the V2 shape explicitly; the test assembly uses the current EF model and must not apply it to V2 tables.
         await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO lms.CatalogCourse (Id, FacultyId, Code, Title, Active)
+                VALUES ({course.Id}, {faculty.Id}, {course.Code}, {course.Title}, 1);
+            INSERT INTO lms.Offering (Id, CourseId, TermId, LeadId, GroupCode, Audience, OwnerMajorId, Active, VisibleUtc, PublishedUtc, Revision)
+                VALUES ({offer.Id}, {course.Id}, {term.Id}, {teacher.Id}, {offer.GroupCode}, {(int)offer.Audience}, {major.Id}, 1, {offer.VisibleUtc}, {offer.PublishedUtc}, {offer.Revision});
+            INSERT INTO lms.Enrollment (Id, OfferingId, StudyRecordId, Status, CreatedUtc, ChangedUtc, Revision)
+                VALUES ({enrollment.Id}, {offer.Id}, {study.Id}, {(int)enrollment.Status}, {enrollment.CreatedUtc}, {enrollment.ChangedUtc}, {enrollment.Revision});
+            INSERT INTO lms.Chapter (Id, OfferingId, Title, Position, Active, PublishedUtc, VisibleFromUtc, VisibleUntilUtc)
+                VALUES ({chapter.Id}, {offer.Id}, {chapter.Title}, {chapter.Position}, 1, {chapter.PublishedUtc}, {chapter.VisibleFromUtc}, {chapter.VisibleUntilUtc});
+            INSERT INTO lms.LessonSession (Id, OfferingId, Title, OpensUtc, Active)
+                VALUES ({session.Id}, {offer.Id}, {session.Title}, {session.OpensUtc}, 1);
             INSERT INTO lms.Lesson (Id, ChapterId, SessionId, Title, Body, Position, Active, VisibleFromUtc)
                 VALUES ({lesson}, {chapter.Id}, {session.Id}, N'درسک', N'متن', 1, 1, {now});
             INSERT INTO lms.Lesson (Id, ChapterId, Title, Body, Position, Active)
@@ -52,6 +62,7 @@ public sealed partial class LmsPersistenceTests
             """);
         await db.Database.MigrateAsync();
         Assert.Contains(AddWorkspace, await db.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(major.Id, (await db.Set<CatalogCourse>().SingleAsync(x => x.Id == course.Id)).MajorId);
         var linked = await db.Set<Lesson>().SingleAsync(x => x.Id == lesson);
         Assert.Equal(session.OpensUtc, linked.VisibleFromUtc);
         Assert.Equal(session.Id, db.Entry(linked).Property<Guid?>("SessionId").CurrentValue);

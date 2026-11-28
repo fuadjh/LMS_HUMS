@@ -64,7 +64,8 @@ internal static class StudioDocuments
                 StartDay: l.StartDay, EndDay: l.EndDay)))).ToArray();
 
     internal static Guid[] MediaIds(StudioContent content) => content.Chapters.SelectMany(c => c.Lessons)
-        .SelectMany(l => l.CoverId is { } cover ? l.MediaIds.Append(cover) : l.MediaIds).Distinct().ToArray();
+        .SelectMany(l => l.MediaIds.Concat(l.CoverId is { } cover ? new[] { cover } : Array.Empty<Guid>())
+            .Concat((l.Materials ?? []).SelectMany(m => new[] { m.MediaId, m.CoverId }).OfType<Guid>())).Distinct().ToArray();
 
     internal static StudioContent Validate(StudioContent? content)
     {
@@ -92,12 +93,24 @@ internal static class StudioDocuments
                 if (l.MediaIds is not { Length: <= 16 } || l.MediaIds.Any(m => m == Guid.Empty) || l.MediaIds.Distinct().Count() != l.MediaIds.Length ||
                     (l.CoverId is { } cover && (cover == Guid.Empty || l.MediaIds.Contains(cover))))
                     throw LmsError.Invalid("شناسهٔ فایل/کاور معتبر نیست یا بیش از ۱۶ پیوست وارد شده است.");
-                if (body == "" && l.MediaIds.Length == 0) throw LmsError.Invalid("درسک باید متن یا پیوست آموزشی داشته باشد.");
-                return l with { Title = LmsError.Text(l.Title, 180), Summary = LmsError.Text(l.Summary, 250), Body = body };
+                var typed = l.Materials ?? [];
+                if (typed.Length + l.MediaIds.Length > 16 || typed.Any(m => m is null || m.Key == Guid.Empty || !Enum.IsDefined(m.Kind)) ||
+                    typed.Select(m => m.Key).Distinct().Count() != typed.Length ||
+                    l.FeaturedKey is { } featured && !typed.Any(m => m.Key == featured))
+                    throw LmsError.Invalid("منابع نوع‌دار یا تصویر نمایندهٔ درس معتبر نیستند.");
+                var materials = typed.Select(m =>
+                {
+                    if (m.MediaId == Guid.Empty || m.CoverId == Guid.Empty || (m.Kind == LearningKind.Text) == m.MediaId.HasValue)
+                        throw LmsError.Invalid("فایل اصلی برای نوع محتوا معتبر نیست.");
+                    return m with { Title = LmsError.Text(m.Title, 180), Description = LmsError.Text(m.Description, 450, true),
+                        Body = m.Kind == LearningKind.Text ? LmsError.Text(m.Body, 32000) : null, Alt = LmsError.Text(m.Alt, 250, true) };
+                }).ToArray();
+                if (body == "" && l.MediaIds.Length == 0 && materials.Length == 0) throw LmsError.Invalid("درسک باید متن یا پیوست آموزشی داشته باشد.");
+                return l with { Title = LmsError.Text(l.Title, 180), Summary = LmsError.Text(l.Summary, 320), Body = body, Materials = materials };
             }).OrderBy(x => x.Position).ToArray();
             if (c.Assessments is { Length: > 0 })
                 throw LmsError.Invalid("نسخهٔ جدید محتوا ارزیابی ندارد؛ از بانک مستقل تکلیف استفاده کنید.");
-            return c with { Title = LmsError.Text(c.Title, 180), Lessons = lessons, Assessments = [] };
+            return c with { Title = LmsError.Text(c.Title, 180), Summary = LmsError.Text(c.Summary, 320, true), Lessons = lessons, Assessments = [] };
         }).OrderBy(x => x.Position).ToArray();
         return new(clean);
 

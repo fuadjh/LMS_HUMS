@@ -106,9 +106,9 @@ public sealed partial class LmsPersistenceTests
             var template = await As(professor.Id, new SaveAssignmentTemplateCommand(new(null, "تکلیف", "پاسخ را بنویسید.", null, 4, 20)));
             Assert.Empty(await As(colleague.Id, new GetAssignmentTemplatesQuery(null, 1)));
             Assert.Equal(404, (await Assert.ThrowsAsync<UseCaseException>(() => As(professor.Id,
-                new SaveOfferingAssignmentCommand(Guid.NewGuid(), new(null, null, null, null, null, Day(5), TemplateVersionId: template))))).StatusCode);
+                new SaveOfferingAssignmentCommand(Guid.NewGuid(), new(null, null, null, null, null, OpensUtc: null, DueUtc: Day(5), TemplateVersionId: template))))).StatusCode);
             var task = await As(professor.Id, new SaveOfferingAssignmentCommand(offer.Id,
-                new(null, null, null, null, null, Day(5), TemplateVersionId: template)));
+                new(null, null, null, null, null, OpensUtc: null, DueUtc: Day(5), TemplateVersionId: template)));
             var unpublished = await As(professor.Id, new GetOfferingAssignmentQuery(offer.Id, task, "teacher"));
             Assert.Empty((await As(student.Id, new GetOfferingAssignmentsQuery(offer.Id, "student"))).Rows);
             Assert.True(await As(professor.Id, new PublishOfferingAssignmentCommand(offer.Id, task, new(unpublished.Revision))));

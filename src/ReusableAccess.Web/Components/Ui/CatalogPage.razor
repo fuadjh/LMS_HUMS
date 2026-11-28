@@ -1,4 +1,4 @@
-﻿@inherits ReusableAccess.Web.Ui.UiPageBase
+@inherits ReusableAccess.Web.Ui.UiPageBase
 @inject AccessCatalogService Catalog
 
 
@@ -22,48 +22,16 @@
                       Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search"
                       Class="mb-4" />
-        <MudTable T="CatalogItem" Items="@VisibleRows"
-                  Loading="@Busy" Hover="true"
-                  Elevation="0" Class="ra-table" RowsPerPage="10">
-            <HeaderContent>
-                <MudTh>عنوان</MudTh>
-                <MudTh>کد ثابت</MudTh>
-                <MudTh>عملیات</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="عنوان">
-                    @(IsScope ? ScopePath(context) : context.Name)
-                </MudTd>
-                <MudTd DataLabel="کد ثابت">
-                    <span dir="ltr">@context.Code</span>
-                </MudTd>
-                <MudTd DataLabel="عملیات">
-                    <MudButton Size="Size.Small" Disabled="@Unavailable"
-                               OnClick="() => BeginEdit(context)">
-                        ویرایش
-                    </MudButton>
-                    @if (!IsScope)
-                    {
-                        <MudButton Size="Size.Small" Disabled="@Unavailable"
-                                   OnClick="() => OpenPermissions(context)">
-                            مجوزها
-                        </MudButton>
-                    }
-                    <MudButton Size="Size.Small" Color="Color.Error"
-                               Disabled="@Unavailable"
-                               OnClick="() => BeginDelete(context)">
-                        حذف
-                    </MudButton>
-                </MudTd>
-            </RowTemplate>
-            <NoRecordsContent>
-                <MudText Class="pa-5">موردی برای نمایش وجود ندارد.</MudText>
-            </NoRecordsContent>
-            <PagerContent>
-                <MudTablePager RowsPerPageString="تعداد ردیف"
-                               InfoFormat="{first_item} تا {last_item} از {all_items}" />
-            </PagerContent>
-        </MudTable>
+        <AppDataTable TRow="CatalogItem" Caption="@Title" Items="@(VisibleRows.ToArray())" RowKey="@(x => x.Id)" Loading="@Busy" FilterKey="@_query">
+            <Columns><th scope="col">عنوان</th><th scope="col">کد ثابت</th><th scope="col">عملیات</th></Columns>
+            <RowCells Context="row">
+                <td>@(IsScope ? ScopePath(row) : row.Name)</td><td><bdi>@row.Code</bdi></td>
+                <td><MudButton Size="Size.Small" Disabled="@Unavailable" OnClick="() => BeginEdit(row)">ویرایش</MudButton>
+                    @if (!IsScope) { <MudButton Size="Size.Small" Disabled="@Unavailable" OnClick="() => OpenPermissions(row)">مجوزها</MudButton> }
+                    <MudButton Size="Size.Small" Color="Color.Error" Disabled="@Unavailable" OnClick="() => BeginDelete(row)">حذف</MudButton>
+                </td>
+            </RowCells>
+        </AppDataTable>
     </ChildContent>
 </AppPage>
 

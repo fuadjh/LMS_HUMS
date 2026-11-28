@@ -57,7 +57,7 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
         var toUtc = to;
 
         var chapters = data.Read<Chapter>()
-            .Where(c => c.Active && (!published || c.PublishedUtc != null));
+            .Where(c => c.Active && !c.Retired && c.PendingBaseId == null && (!published || c.PublishedUtc != null));
 
         var assessments =
             from a in data.Read<Assessment>()
@@ -81,7 +81,7 @@ internal sealed class LmsCalendar(LmsData data, LmsAccess access) : ILmsCalendar
                                      join o in data.Read<Offering>() on c.OfferingId equals o.Id
                                      join course in data.Read<CatalogCourse>() on o.CourseId equals course.Id
                                      where offers.Contains(o.Id) && c.VisibleFromUtc >= fromUtc && c.VisibleFromUtc < toUtc
-                                     select new CalendarEntry(o.Id, c.Id, "chapter-open", c.Title + " · " + course.Title, c.VisibleFromUtc!.Value))
+                                     select new CalendarEntry(o.Id, c.StableChapterId ?? c.Id, "chapter-open", c.Title + " · " + course.Title, c.VisibleFromUtc!.Value))
             .ToArrayAsync(ct);
         var termEntries = await (
             from o in data.Read<Offering>()

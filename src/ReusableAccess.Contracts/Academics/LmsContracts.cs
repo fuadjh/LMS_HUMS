@@ -39,10 +39,10 @@ public sealed record LessonRow(Guid Id, string Title, int Position, DateTimeOffs
     Guid? CoverMediaId = null, Guid? TemplateItemKey = null, bool NeedsAvailabilityReview = false,
     DateTimeOffset? OwnOpensUtc = null, DateTimeOffset? OwnClosesUtc = null);
 public sealed record ChapterRow(Guid Id, string Title, int Position, DateTimeOffset? PublishedUtc, bool Active, LessonRow[] Lessons,
-    DateTimeOffset? OpensUtc = null, DateTimeOffset? ClosesUtc = null, Guid? TemplateItemKey = null);
+    DateTimeOffset? OpensUtc = null, DateTimeOffset? ClosesUtc = null, Guid? TemplateItemKey = null, string? Summary = null);
 public sealed record QuizQuestionRow(string Prompt, string[] Choices, int? CorrectIndex = null);
 public sealed record OfferingDetails(OfferingRow Offering, ChapterRow[] Chapters, CoTeacherRow[] CoTeachers,
-    bool TeacherEditor, bool CanPublish, bool CanGrade, bool CanRelease, bool Lead, bool ReadOnly);
+    bool TeacherEditor, bool CanPublish, bool CanGrade, bool CanRelease, bool Lead, bool ReadOnly, bool HasChapters = false);
 public sealed record TemplateSave(Guid? TemplateId, string Title);
 public sealed record TemplateApply(Guid VersionId);
 public sealed record TemplateRow(Guid Id, Guid CourseId, Guid VersionId, int Version, string Title, DateTimeOffset CreatedUtc);
@@ -68,9 +68,9 @@ public sealed record UploadTicket(Guid TrackingId, UploadState State, string? Co
 public sealed record UploadStatusRow(Guid TrackingId, string Name, long ReportedBytes, long? ReceivedBytes, UploadState State,
     string? Code, DateTimeOffset CreatedUtc, DateTimeOffset UpdatedUtc, Guid? ActorId, Guid TargetId, string? Ip, string? Correlation);
 public sealed record LogFilter(DateTimeOffset? FromUtc, DateTimeOffset? ToUtc, string? Name, long? MinBytes,
-    long? MaxBytes, UploadState? State, Guid? TrackingId, int Page = 1, Guid? ActorId = null, string? Outcome = null);
+    long? MaxBytes, UploadState? State, Guid? TrackingId, int Page = 1, Guid? ActorId = null, string? Outcome = null, int Size = 15);
 public sealed record LogPage<T>(T[] Rows, int Page, bool HasMore);
 public sealed record SecurityRow(DateTimeOffset OccurredUtc, Guid? ActorId, string Action, string Outcome,
-    Guid? ResourceId, string? Ip, string? Correlation, int? HttpStatus);
+    Guid? ResourceId, string? Ip, string? Correlation, int? HttpStatus, Guid? Id = null);
 public sealed record SmsEdit(string? Provider, string? ApiKey, bool Enabled);
 public sealed record SmsView(string[] Providers, string? Selected, bool Configured);

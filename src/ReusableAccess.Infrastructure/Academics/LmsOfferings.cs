@@ -107,19 +107,20 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
                                                    where x.OfferingId == offeringId orderby u.DisplayName
                                                    select new CoTeacherRow(x.InstructorId, u.DisplayName, x.CanGrade, x.CanPublish, x.Active)).ToArrayAsync(ct) : [];
         var writable = !closed && info.Offering.Active;
+        var hasChapters = teacher && await data.Read<Chapter>().AnyAsync(c => c.OfferingId == offeringId, ct);
         return new(Row(info, lead, targets, study, own, now), chapters, coTeachers,
             teacher && writable && isLead && access.HasTeacher(LmsPermissions.Content),
             teacher && writable && (isLead || co?.CanPublish == true) && access.HasTeacher(LmsPermissions.Publish),
             teacher && writable && (isLead || co?.CanGrade == true) && access.HasTeacher(LmsPermissions.Grade),
             teacher && writable && (isLead || co?.CanGrade == true) && access.HasTeacher(LmsPermissions.Release),
-            isLead, preview || !writable || view == "student" && (own?.Status != EnrollmentStatus.Active || study?.Record.Id != own?.StudyRecordId));
+            isLead, preview || !writable || view == "student" && (own?.Status != EnrollmentStatus.Active || study?.Record.Id != own?.StudyRecordId), hasChapters);
     }
 
     internal Task<Guid[]> TargetIds(Guid id, CancellationToken ct)
         => data.Read<OfferingCohort>().Where(x => x.OfferingId == id).Select(x => x.CohortId).ToArrayAsync(ct);
     private async Task<ChapterRow[]> ChapterRows(Guid id, Enrollment? own, bool teacher, DateTimeOffset now, CancellationToken ct)
     {
-        var chapters = await data.Read<Chapter>().Where(x => x.OfferingId == id && (teacher || x.Active && x.PublishedUtc != null))
+        var chapters = await data.Read<Chapter>().Where(x => x.OfferingId == id && !x.Retired && (teacher ? !data.Read<Chapter>().Any(h => h.PendingBaseId == x.Id && !h.Retired) : x.PendingBaseId == null && x.Active && x.PublishedUtc != null))
             .OrderBy(x => x.Position).ToArrayAsync(ct);
         var chapterIds = chapters.Select(x => x.Id).ToArray();
         var lessons = await data.Read<Lesson>().Where(x => chapterIds.Contains(x.ChapterId) && (teacher || x.Active))
@@ -130,7 +131,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
                             orderby l.Position == null, l.Position, l.Id
                             select new { l.LessonId, File = new FileRow(m.Id, m.Name, m.Bytes, m.Extension) }).ToArrayAsync(ct))
             .ToLookup(x => x.LessonId, x => x.File);
-        var done = own is null ? new HashSet<Guid>() : (await data.Read<LessonProgress>().Where(x => x.EnrollmentId == own.Id)
+        var done = own is null ? new HashSet<Guid>() : (await data.Read<LessonProgress>().Where(x => x.EnrollmentId == own.Id && x.ClearedUtc == null)
             .Select(x => x.LessonId).ToArrayAsync(ct)).ToHashSet();
         var byChapter = lessons.ToLookup(l => l.ChapterId);
         return chapters.Select(c => new ChapterRow(c.Id, c.Title, c.Position, c.PublishedUtc, c.Active,
@@ -138,38 +139,17 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
             {
                 var allowed = teacher || AcademicRules.CanReadLesson(now, c, l);
                 return new LessonRow(l.Id, l.Title, l.Position, AcademicRules.Later(c.VisibleFromUtc, l.VisibleFromUtc), allowed ? l.Body : null,
-                    allowed, done.Contains(l.Id), l.Active, allowed ? files[l.Id].ToArray() : [], allowed ? l.Summary : null,
+                    allowed, done.Contains(l.StableLessonId ?? l.Id), l.Active, allowed ? files[l.Id].ToArray() : [], allowed ? l.Summary : null,
                     AcademicRules.Earlier(c.VisibleUntilUtc, l.VisibleUntilUtc), allowed ? l.CoverMediaId : null,
                     teacher ? l.TemplateItemKey : null, teacher && l.NeedsAvailabilityReview,
                     teacher ? l.VisibleFromUtc : null, teacher ? l.VisibleUntilUtc : null);
-            }).ToArray(), c.VisibleFromUtc, c.VisibleUntilUtc, teacher ? c.TemplateItemKey : null)).ToArray();
+            }).ToArray(), c.VisibleFromUtc, c.VisibleUntilUtc, teacher ? c.TemplateItemKey : null, teacher || AcademicRules.CanReadChapter(now, c) ? c.Summary : null)).ToArray();
     }
 
     public async Task<Guid> SaveAsync(OfferingEdit input, CancellationToken ct)
     {
         await using var tx = await data.Transaction(ct);
-        await access.AsEducation(LmsPermissions.Assign, ct);
-        if (!Enum.IsDefined(input.Audience) || input.CohortIds is null || input.CohortIds.Length > 60)
-            throw LmsError.Invalid("نوع مخاطب یا تعداد ورودی‌ها معتبر نیست.");
-        var actor = await access.Load(ct);
-        if (input.Audience == OfferingAudience.General && !actor.IsPlatformSuperAdmin) throw LmsError.Denied();
-        if ((input.Audience == OfferingAudience.Specialized) != input.OwnerMajorId.HasValue)
-            throw LmsError.Invalid("رشته فقط برای ارائهٔ تخصصی الزامی است.");
-        var course = await data.Find<CatalogCourse>(input.CourseId, ct);
-        var term = await data.Find<Term>(input.TermId, ct);
-        access.DemandScope(LmsPermissions.Assign, course.FacultyId, input.OwnerMajorId);
-        LmsData.Open(term, data.Now);
-        if (!course.Active || !await data.Read<Faculty>().AnyAsync(x => x.Id == course.FacultyId && x.Active, ct))
-            throw LmsError.Conflict("درس یا دانشکده غیرفعال است.");
-        if (input.OwnerMajorId is { } owner && !await data.Read<Major>().AnyAsync(x => x.Id == owner && x.FacultyId == course.FacultyId && x.Active, ct))
-            throw LmsError.Invalid("رشته به دانشکدهٔ درس تعلق ندارد یا فعال نیست.");
-        await ValidateInstructor(input.LeadId, course.FacultyId, input.OwnerMajorId, actor.IsPlatformSuperAdmin, ct);
-        var ids = input.CohortIds.Distinct().ToArray();
-        var cohorts = await access.Cohorts().Where(x => ids.Contains(x.Id)).ToArrayAsync(ct);
-        if (cohorts.Length != ids.Length || cohorts.Any(x => !x.Active || !AcademicRules.Eligible(input.Audience,
-                course.FacultyId, input.OwnerMajorId, x.FacultyId, x.MajorId, true)))
-            throw LmsError.Invalid("ورودی خارج از مخاطب یا غیرفعال است.");
-        var group = LmsError.Code(input.GroupCode);
+        var (course, term, ids, group) = await Prepare(input, ct);
         var o = input.Id is { } id ? await data.Find<Offering>(id, ct) : new Offering { CourseId = course.Id, TermId = term.Id };
         if (input.Id.HasValue)
         {
@@ -189,6 +169,62 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
         data.Db.RemoveRange(existing.Where(x => !ids.Contains(x.CohortId)));
         data.Db.AddRange(ids.Except(existing.Select(x => x.CohortId)).Select(c => new OfferingCohort { OfferingId = o.Id, CohortId = c }));
         return await data.Finish(tx, o.Id, o.Id, ct);
+    }
+
+    internal async Task<(CatalogCourse Course, Term Term, Guid[] Cohorts, string Group)> Prepare(OfferingEdit input, CancellationToken ct)
+    {
+        await access.AsEducation(LmsPermissions.Assign, ct);
+        if (!Enum.IsDefined(input.Audience) || input.CohortIds is null || input.CohortIds.Length > 60)
+            throw LmsError.Invalid("نوع مخاطب یا تعداد ورودی‌ها معتبر نیست.");
+        var actor = await access.Load(ct);
+        if (input.Audience == OfferingAudience.General && !actor.IsPlatformSuperAdmin) throw LmsError.Denied();
+        if ((input.Audience == OfferingAudience.Specialized) != input.OwnerMajorId.HasValue)
+            throw LmsError.Invalid("رشته فقط برای ارائهٔ تخصصی الزامی است.");
+        var course = await data.Read<CatalogCourse>().SingleOrDefaultAsync(x => x.Id == input.CourseId, ct) ?? throw LmsError.Missing();
+        var term = await data.Read<Term>().SingleOrDefaultAsync(x => x.Id == input.TermId, ct) ?? throw LmsError.Missing();
+        if (input.Id is null && !course.MajorId.HasValue) throw LmsError.Invalid("رشتهٔ درس قدیمی را ابتدا در بخش درس‌ها مشخص کنید.");
+        if (input.Id is null && input.Audience == OfferingAudience.Specialized && input.OwnerMajorId != course.MajorId)
+            throw LmsError.Invalid("رشتهٔ ارائهٔ تخصصی باید همان رشتهٔ درس باشد.");
+        access.DemandScope(LmsPermissions.Assign, course.FacultyId, input.OwnerMajorId);
+        LmsData.Open(term, data.Now);
+        if (!course.Active || !await data.Read<Faculty>().AnyAsync(x => x.Id == course.FacultyId && x.Active, ct))
+            throw LmsError.Conflict("درس یا دانشکده غیرفعال است.");
+        if (input.OwnerMajorId is { } owner && !await data.Read<Major>().AnyAsync(x => x.Id == owner && x.FacultyId == course.FacultyId && x.Active, ct))
+            throw LmsError.Invalid("رشته به دانشکدهٔ درس تعلق ندارد یا فعال نیست.");
+        await ValidateInstructor(input.LeadId, course.FacultyId, input.OwnerMajorId, actor.IsPlatformSuperAdmin, ct);
+        var ids = input.CohortIds.Distinct().ToArray();
+        var cohorts = await access.Cohorts().Where(x => ids.Contains(x.Id)).ToArrayAsync(ct);
+        if (cohorts.Length != ids.Length || cohorts.Any(x => !x.Active || !AcademicRules.Eligible(input.Audience,
+                course.FacultyId, input.OwnerMajorId, x.FacultyId, x.MajorId, true)))
+            throw LmsError.Invalid("ورودی خارج از مخاطب یا غیرفعال است.");
+        var group = LmsError.Code(input.GroupCode);
+        if (await data.Read<Offering>().AnyAsync(x => x.Id != input.Id && x.CourseId == course.Id && x.TermId == term.Id && x.GroupCode == group, ct))
+            throw LmsError.Conflict("کد گروه برای این درس و نیم‌سال تکراری است.");
+        return (course, term, ids, group);
+    }
+
+    public async Task<LmsTableSlice<OfferingRow>> AdminPage(OfferingFilter filter, LmsTablePage page, CancellationToken ct)
+    {
+        await access.AsEducation(LmsPermissions.Assign, ct);
+        var actor = await access.Load(ct);
+        var scope = access.EducationScopes(LmsPermissions.Assign);
+        var faculties = scope.Faculties; var majors = scope.Majors;
+        var q = LmsError.Text(filter.Search, 80, true);
+        var query = Infos().Where(x => (filter.TermId == null || x.Term.Id == filter.TermId) &&
+            (q == "" || x.Course.Title.Contains(q) || x.Course.Code.Contains(q) || x.Offering.GroupCode.Contains(q)) &&
+            (filter.CohortId == null || !data.Read<OfferingCohort>().Any(c => c.OfferingId == x.Offering.Id) ||
+             data.Read<OfferingCohort>().Any(c => c.OfferingId == x.Offering.Id && c.CohortId == filter.CohortId)));
+        if (!actor.IsPlatformSuperAdmin)
+            query = query.Where(x => x.Offering.Audience != OfferingAudience.General && (faculties.Contains(x.Course.FacultyId) ||
+                 x.Offering.OwnerMajorId != null && majors.Contains(x.Offering.OwnerMajorId.Value)));
+        var (actual, size, total) = await AcademicPaging.Bounds(query, page, ct);
+        var rows = await query.OrderByDescending(x => x.Term.StartsUtc).ThenBy(x => x.Course.Title).ThenBy(x => x.Offering.GroupCode).ThenBy(x => x.Offering.Id)
+            .Skip((actual - 1) * size).Take(size).ToArrayAsync(ct);
+        var ids = rows.Select(x => x.Offering.Id).ToArray();
+        var targets = (await data.Read<OfferingCohort>().Where(x => ids.Contains(x.OfferingId)).ToArrayAsync(ct)).ToLookup(x => x.OfferingId, x => x.CohortId);
+        var leadIds = rows.Select(x => x.Offering.LeadId).Distinct().ToArray();
+        var names = await data.Read<ApplicationUser>().Where(x => leadIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.DisplayName, ct);
+        return new(rows.Select(x => Row(x, names.GetValueOrDefault(x.Offering.LeadId, "—"), targets[x.Offering.Id].ToArray(), null, null, data.Now)).ToArray(), total, actual, size);
     }
 
     internal async Task ValidateInstructor(Guid id, Guid faculty, Guid? major, bool platform, CancellationToken ct)
@@ -281,7 +317,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
             GuardChildWindow(chapter.VisibleFromUtc, chapter.VisibleUntilUtc, opens, closes);
             if (kind == "legacy-availability")
             {
-                if (input.Id is null || !lesson.NeedsAvailabilityReview || !lesson.Active || chapter.PublishedUtc is null)
+                if (input.Id is null || !lesson.NeedsAvailabilityReview || !lesson.Active || chapter.PublishedUtc is null || chapter.Retired)
                     throw LmsError.Conflict("این درسک منتظر بازبینی دسترسی نیست.");
             }
             else
@@ -303,16 +339,16 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
         return await data.Finish(tx, result, result, ct);
     }
 
-    private static int Position(int value) => value is >= 1 and <= 1000 ? value
+    internal static int Position(int value) => value is >= 1 and <= 1000 ? value
         : throw LmsError.Invalid("ترتیب باید بین ۱ تا ۱۰۰۰ باشد.");
 
-    private static void GuardWindow(Term term, DateTimeOffset? opens, DateTimeOffset? closes)
+    internal static void GuardWindow(Term term, DateTimeOffset? opens, DateTimeOffset? closes)
     {
         if (opens < term.StartsUtc || opens >= term.EndsUtc || closes <= term.StartsUtc || closes > term.EndsUtc || closes <= opens)
             throw LmsError.Invalid("بازهٔ نمایش باید معتبر و در محدودهٔ نیم‌سال باشد.");
     }
 
-    private static void GuardChildWindow(DateTimeOffset? parentStart, DateTimeOffset? parentEnd, DateTimeOffset? start, DateTimeOffset? end)
+    internal static void GuardChildWindow(DateTimeOffset? parentStart, DateTimeOffset? parentEnd, DateTimeOffset? start, DateTimeOffset? end)
     {
         if (start < parentStart || end > parentEnd ||
             AcademicRules.Earlier(parentEnd, end) <= AcademicRules.Later(parentStart, start))
@@ -323,7 +359,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
         => await data.Db.Set<Chapter>().SingleOrDefaultAsync(x => x.Id == chapterId && x.OfferingId == offeringId, ct) ?? throw LmsError.Missing();
     internal static void RequireDraft(Chapter c)
     {
-        if (c.PublishedUtc is not null) throw LmsError.Conflict("فصل منتشرشده ثابت است؛ فصل تازه‌ای بسازید.");
+        if (c.PublishedUtc is not null || c.WorkspaceManaged || c.Retired) throw LmsError.Conflict("تغییر این فصل فقط از نمای نسخه‌بندی‌شدهٔ محتوا ممکن است.");
     }
     public async Task<bool> PublishChapterAsync(Guid offeringId, Guid chapterId, CancellationToken ct)
     {
@@ -331,6 +367,7 @@ internal sealed partial class LmsOfferings(LmsData data, LmsAccess access, Studi
         var info = await Editable(offeringId, LmsPermissions.Publish, ct);
         var c = await FindChapter(offeringId, chapterId, ct);
         if (c.PublishedUtc is not null) return true;
+        RequireDraft(c);
         if (!c.Active) throw LmsError.Conflict("ابتدا فصل را فعال کنید.");
         var lessons = await data.Read<Lesson>().Where(x => x.ChapterId == c.Id && x.Active).ToArrayAsync(ct);
         if (lessons.Length == 0 || lessons.Any(l => l.NeedsAvailabilityReview))

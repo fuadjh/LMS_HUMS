@@ -1,0 +1,186 @@
+{
+  "kind": "reference + isolated scoped-CSS fixture (not Blazor)",
+  "DPR": 1,
+  "results": [
+    {
+      "ref": {
+        "width": 1440,
+        "overflow": false,
+        "hero": 251.36,
+        "thumb": 104,
+        "grid": "934px 235px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 1440,
+        "overflow": false,
+        "hero": 251.36,
+        "thumb": 104,
+        "grid": "934px 235px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 1270,
+        "overflow": false,
+        "hero": 248.5,
+        "thumb": 92,
+        "grid": "789px 210px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 1270,
+        "overflow": false,
+        "hero": 248.5,
+        "thumb": 92,
+        "grid": "789px 210px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 1080,
+        "overflow": false,
+        "hero": 239.97,
+        "thumb": 80,
+        "grid": "634px 175px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 1080,
+        "overflow": false,
+        "hero": 239.97,
+        "thumb": 80,
+        "grid": "634px 175px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 901,
+        "overflow": false,
+        "hero": 236,
+        "thumb": 80,
+        "grid": "455px 175px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 901,
+        "overflow": false,
+        "hero": 236,
+        "thumb": 80,
+        "grid": "455px 175px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 900,
+        "overflow": false,
+        "hero": 236,
+        "thumb": 92,
+        "grid": "627px 210px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 900,
+        "overflow": false,
+        "hero": 236,
+        "thumb": 92,
+        "grid": "627px 210px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 730,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 92,
+        "grid": "682px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 730,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 92,
+        "grid": "682px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 640,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 92,
+        "grid": "616px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 640,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 92,
+        "grid": "616px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 525,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 80,
+        "grid": "501px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 525,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 80,
+        "grid": "501px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 390,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 80,
+        "grid": "366px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 390,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 80,
+        "grid": "366px",
+        "chapters": 2
+      }
+    },
+    {
+      "ref": {
+        "width": 360,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 80,
+        "grid": "336px",
+        "chapters": 2
+      },
+      "scoped_fixture": {
+        "width": 360,
+        "overflow": false,
+        "hero": 214.86,
+        "thumb": 80,
+        "grid": "336px",
+        "chapters": 2
+      }
+    }
+  ]
+}

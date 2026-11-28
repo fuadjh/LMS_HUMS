@@ -8,6 +8,7 @@
     @if (_info is not null) { <p class="lms-muted">@_info.Name · @LmsPage.Size(_info.Size)</p> }
     <div class="lms-row">
         <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(_busy || _info is null || Disabled)" OnClick="Send">ارسال فایل</MudButton>
+        @if (_busy && _tracking.HasValue) { <MudButton Color="Color.Error" OnClick="Cancel">توقف انتقال</MudButton> }
         <progress aria-label="پیشرفت انتقال" max="100" value="0" @ref="_progress"></progress>
     </div>
     @if (_tracking.HasValue)
@@ -21,8 +22,10 @@
 @code {
     [Parameter, EditorRequired] public Guid TargetId { get; set; }
     [Parameter, EditorRequired] public MediaPurpose Purpose { get; set; }
+    [Parameter] public string? AcceptOverride { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public EventCallback<FileRow> Uploaded { get; set; }
+    [Parameter] public EventCallback<bool> TransferChanged { get; set; }
     private sealed record Info(string Name, long Size);
     private sealed record Transfer(int Status);
     private ElementReference _file, _progress;
@@ -35,14 +38,18 @@
     {
         MediaPurpose.RosterExcel => UploadLimits.RosterBytes,
         MediaPurpose.TemplateCover => UploadLimits.CoverBytes,
+        MediaPurpose.CurriculumCover => UploadLimits.CurriculumCoverBytes,
+        MediaPurpose.CurriculumFile => UploadLimits.CurriculumFileBytes,
         _ => UploadLimits.FileBytes
     };
-    private string Accept => Purpose switch
+    private string Accept => AcceptOverride ?? (Purpose switch
     {
         MediaPurpose.RosterExcel => ".xlsx",
         MediaPurpose.StudentAvatar or MediaPurpose.InstructorAvatar or MediaPurpose.TemplateCover => ".jpg,.jpeg,.png",
+        MediaPurpose.CurriculumCover => ".png,.jpg,.jpeg,.webp",
+        MediaPurpose.CurriculumFile => ".mp4,.webm,.pdf,.mp3,.wav,.ogg,.png,.jpg,.jpeg,.webp,.gif",
         _ => ".mp4,.pdf,.docx,.jpg,.jpeg,.png,.xlsx"
-    };
+    });
     private async Task ReadInfo(ChangeEventArgs _)
     {
         _info = await JS.InvokeAsync<Info?>("raLmsTransfer.info", _file);
@@ -54,6 +61,7 @@
         _busy = true; _tracking = null; _note = null;
         try
         {
+            await TransferChanged.InvokeAsync(true);
             var t = await Console.PostAsync<UploadTicket>("api/lms/uploads", new UploadStart(TargetId, Purpose, _info.Name, _info.Size));
             _tracking = t.TrackingId;
             if (t.State != UploadState.Pending)
@@ -73,7 +81,12 @@
             _note = e is ConsoleApiException ? e.Message : "پاسخ انتقال تأیید نشد؛ با کد پیگیری استعلام بگیرید.";
             Snackbar.Add(_note, Severity.Warning);
         }
-        finally { _busy = false; }
+        finally { _busy = false; await TransferChanged.InvokeAsync(false); }
+    }
+    private async Task Cancel()
+    {
+        try { await JS.InvokeVoidAsync("raLmsTransfer.cancel", _file); }
+        catch (JSException) { _note = "توقف انتقال تأیید نشد؛ وضعیت را استعلام کنید."; }
     }
     private async Task Show(UploadStatusRow row, int? status)
     {

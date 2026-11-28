@@ -1,10 +1,10 @@
-﻿@using ReusableAccess.Web.Academics
+@using ReusableAccess.Web.Academics
 
 <Router AppAssembly="typeof(Program).Assembly"
         NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData"
-                            DefaultLayout="@LmsLayoutRoutes.For(routeData)">
+                            DefaultLayout="@LmsLayoutRoutes.For(routeData.PageType, routeData.RouteValues)">
             <NotAuthorized Context="authState">
                 @if (authState.User.Identity?.IsAuthenticated == true)
                 {

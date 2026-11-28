@@ -1,0 +1,44 @@
+<nav class="course-crumb" aria-label="مسیر صفحه">
+    <a href="@($"/lms/panel/{Panel}")">@(Panel == "teacher" ? "پنل استاد" : "پنل دانشجو")</a>
+    <span aria-hidden="true">‹</span><a href="@($"/lms/offerings/{Panel}")">@(Panel == "teacher" ? "دروس تحت تدریس" : "دروس ارائه‌شده")</a>
+    <span aria-hidden="true">‹</span><strong>@Title</strong>
+</nav>
+@if (Hero)
+{
+    <section class="course-hero" aria-label="معرفی دوره">
+        <div class="course-illustration" aria-hidden="true"><img src="/learning/hero-illustration.svg" alt="" width="420" height="260" /></div>
+        <div class="course-hero-copy">
+            <div class="course-kicker"><span></span> دوره آموزشی
+                @if (Offering is { } o) { <i></i><bdi>گروه @LmsPage.Fa(o.Group) · @LmsPage.Fa(o.Term)</bdi> }
+            </div>
+            <h1>@Title</h1>
+            @if (!string.IsNullOrWhiteSpace(Summary)) { <p>@Summary</p> }
+            @if (Actions is not null) { <div class="hero-actions">@Actions</div> }
+        </div>
+    </section>
+}
+<div class="course-switch">
+    <div class="view-switch" aria-label="نمای محتوا">
+        @if (View is "teacher" or "preview")
+        {
+            <a href="@LearningUi.Offer(Id, "teacher")" aria-current="@(View == "teacher" ? "page" : null)">نمای مدرس</a>
+            <a href="@LearningUi.Offer(Id, "preview")" aria-current="@(View == "preview" && !Draft ? "page" : null)">نسخهٔ منتشرشده</a>
+            @if (Draft || ShowDraft) { <a href="@LearningUi.Offer(Id, "preview", true)" aria-current="@(Draft ? "page" : null)">پیش‌نمایش پیش‌نویس</a> }
+        }
+        else { <button type="button" aria-pressed="true">نمای دانشجو</button> }
+    </div>
+    <span class="demo-badge"><span></span>@Status</span>
+</div>
+@code {
+    [Parameter] public OfferingRow? Offering { get; set; }
+    [Parameter] public Guid Id { get; set; }
+    [Parameter] public string View { get; set; } = "student";
+    [Parameter] public string Title { get; set; } = "فضای یادگیری";
+    [Parameter] public string? Summary { get; set; }
+    [Parameter] public string Status { get; set; } = "محتوای آموزشی";
+    [Parameter] public bool Hero { get; set; }
+    [Parameter] public bool Draft { get; set; }
+    [Parameter] public bool ShowDraft { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    private string Panel => View == "student" ? "student" : "teacher";
+}

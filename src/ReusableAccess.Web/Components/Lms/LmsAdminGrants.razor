@@ -6,17 +6,20 @@
 <div class="lms lms-admin">
     <header class="lms-head"><h1>قلمرو ادمین‌های آموزشی</h1><p>فقط ادمین کل قلمرو ثبت می‌کند. مجوزهای هر نقش جداگانه در بخش نقش‌ها و مجوزها تنظیم می‌شود.</p><a href="/lms" style="color:white">میز کار</a></header>
     <div class="lms-row"><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => Edit(null)">تخصیص قلمرو</MudButton>
-        <a class="lms-file" href="/console/roles">مجوزهای نقش‌های پایه</a></div>
+        <a class="lms-file" href="/lms/admin/roles">مجوزهای نقش‌های پایه</a></div>
     @if (Error is not null && !_open) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
     @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
-    <div class="lms-grid">
-        @foreach (var g in _grants)
-        {
-            <article class="lms-card" @key="g.Id"><h2>@g.DisplayName</h2><p>@g.Scope</p>
-                <p class="lms-muted">@(g.MajorId.HasValue ? "ادمین رشته" : "ادمین دانشکده") · @(g.Active ? "فعال" : "غیرفعال")</p>
-                <MudButton OnClick="() => Edit(g)">تغییر وضعیت</MudButton></article>
-        }
-    </div>
+    <section class="lms-card">
+        <label>جستجو در قلمروها<input type="search" @bind="_filter" @bind:event="oninput" /></label>
+        <AppDataTable TRow="ScopeGrantRow" Items="@(_grants.Where(g => $"{g.DisplayName} {g.Scope}".Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray())"
+                      Caption="قلمروهای آموزشی" Loading="@Busy" FilterKey="@_filter" RowKey="@(g => g.Id)">
+            <Columns><th scope="col">نام</th><th scope="col">قلمرو</th><th scope="col">نوع / وضعیت</th><th scope="col">عملیات</th></Columns>
+            <RowCells Context="g"><td>@g.DisplayName</td><td>@g.Scope</td>
+                <td>@(g.MajorId.HasValue ? "ادمین رشته" : "ادمین دانشکده") · @(g.Active ? "فعال" : "غیرفعال")</td>
+                <td><MudButton OnClick="() => Edit(g)">تغییر وضعیت</MudButton></td>
+            </RowCells>
+        </AppDataTable>
+    </section>
 </div>
 <LmsDialog @bind-Visible="_open" Title="تخصیص یا غیرفعال‌سازی" Lead="برای قلمروِ دانشکده، رشته را خالی بگذارید. این اقدام اجازهٔ مجوزدهی نمی‌دهد." Error="@Error" Busy="@Busy" OnSave="Save">
     @if (_existing is null)
@@ -36,7 +39,7 @@
     private ScopeGrantRow? _existing;
     private Guid? _faculty, _major, _user;
     private bool _active, _open;
-    private string _search = "";
+    private string _search = "", _filter = "";
     protected override Task OnInitializedAsync() => Run(async () => { _faculties = await Get<CatalogRow[]>("catalog/faculties"); _majors = await Get<CatalogRow[]>("catalog/majors"); await Load(); });
     private async Task Load() => _grants = await Get<ScopeGrantRow[]>("grants");
     private void Edit(ScopeGrantRow? row)

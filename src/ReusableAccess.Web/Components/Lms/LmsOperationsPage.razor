@@ -36,22 +36,30 @@
     @if (_uploads)
     {
         <p class="lms-muted">«تکمیل تأیید نشد» به‌معنای رد قطعی WAF نیست. حجم اعلامی و دریافت‌شده جداگانه‌اند.</p>
-        <div class="lms-card lms-table-box"><table class="lms-table"><thead><tr><th>زمان</th><th>نام و پیگیری</th><th>حجم</th><th>نتیجه</th><th>جزئیات</th></tr></thead><tbody>
-            @foreach (var x in _uploadRows)
-            { <tr><td><bdi>@DateText(x.CreatedUtc)</bdi></td><td>@x.Name<br /><bdi>@x.TrackingId</bdi></td><td>اعلامی @Size(x.ReportedBytes)<br />دریافتی @Size(x.ReceivedBytes)</td><td>@UploadStateLabel(x.State)<br /><bdi>@x.Code</bdi></td><td><MudButton OnClick="() => Details(x)">ردیابی</MudButton></td></tr> }
-        </tbody></table></div>
-        @if (_uploadRows.Length == 0 && !Busy) { <p>ارسالی مطابق فیلتر پیدا نشد.</p> }
+        <section class="lms-card">
+            <AppDataTable TRow="UploadStatusRow" Items="@_uploadRows" Caption="ارسال‌های فایل" RowKey="@(x => x.TrackingId)" Loading="@Busy"
+                          ServerHasMore="@_more" ServerPage="@_page" ServerSize="@_size" PageChanged="ChangePage">
+                <Columns><th scope="col">زمان</th><th scope="col">نام و پیگیری</th><th scope="col">حجم</th><th scope="col">نتیجه</th><th scope="col">جزئیات</th></Columns>
+                <RowCells Context="x"><td><bdi>@DateText(x.CreatedUtc)</bdi></td><td>@x.Name<br /><bdi>@x.TrackingId</bdi></td>
+                    <td>اعلامی @Size(x.ReportedBytes)<br />دریافتی @Size(x.ReceivedBytes)</td><td>@UploadStateLabel(x.State)<br /><bdi>@x.Code</bdi></td>
+                    <td><MudButton OnClick="() => Details(x)">ردیابی</MudButton></td>
+                </RowCells>
+            </AppDataTable>
+        </section>
     }
     else
     {
-        <div class="lms-card lms-table-box"><table class="lms-table"><thead><tr><th>زمان</th><th>عمل و نتیجه</th><th>عامل و IP</th><th>منبع و همبستگی</th></tr></thead><tbody>
-            @foreach (var x in _securityRows)
-            { <tr><td><bdi>@DateText(x.OccurredUtc)</bdi></td><td><bdi>@x.Action</bdi><br /><bdi>@x.Outcome · @x.HttpStatus</bdi></td>
-                <td><bdi>@(x.ActorId?.ToString() ?? "نامعلوم")</bdi><br /><bdi>@(x.Ip ?? "نامعلوم")</bdi></td><td><bdi>@(x.ResourceId?.ToString() ?? "—")</bdi><br /><bdi>@(x.Correlation ?? "—")</bdi></td></tr> }
-        </tbody></table></div>
-        @if (_securityRows.Length == 0 && !Busy) { <p>رویدادی مطابق فیلتر پیدا نشد.</p> }
+        <section class="lms-card">
+            <AppDataTable TRow="SecurityRow" Items="@_securityRows" Caption="رویدادهای امنیتی" RowKey="@(x => (object?)x.Id ?? x)" Loading="@Busy"
+                          ServerHasMore="@_more" ServerPage="@_page" ServerSize="@_size" PageChanged="ChangePage">
+                <Columns><th scope="col">زمان</th><th scope="col">عمل و نتیجه</th><th scope="col">عامل و نشانی</th><th scope="col">منبع و همبستگی</th></Columns>
+                <RowCells Context="x"><td><bdi>@DateText(x.OccurredUtc)</bdi></td><td><bdi>@x.Action</bdi><br /><bdi>@x.Outcome · @x.HttpStatus</bdi></td>
+                    <td><bdi>@(x.ActorId?.ToString() ?? "نامعلوم")</bdi><br /><bdi>@(x.Ip ?? "نامعلوم")</bdi></td>
+                    <td><bdi>@(x.ResourceId?.ToString() ?? "—")</bdi><br /><bdi>@(x.Correlation ?? "—")</bdi></td>
+                </RowCells>
+            </AppDataTable>
+        </section>
     }
-    <div class="lms-row"><MudButton Disabled="@(_page == 1 || Busy)" OnClick="Prev">قبلی</MudButton><span>صفحهٔ @Fa(_page)</span><MudButton Disabled="@(!_more || Busy)" OnClick="Next">بعدی</MudButton></div>
 </div>
 <LmsDialog @bind-Visible="_detail" Title="جزئیات ارسال">
     @if (_selected is { } d)
@@ -77,8 +85,8 @@
     private bool _uploads = true, _more, _detail, _settings, _enabled;
     private string _name = "", _min = "", _max = "", _status = "", _outcome = "", _actor = "", _tracking = "", _provider = "", _key = "";
     private string? _from, _to;
-    private int _page = 1;
-    private DateTimeOffset? _stableTo;
+    private int _page = 1, _size = LmsTablePage.DefaultSize;
+    private LogFilter? _filter;
     private UploadStatusRow[] _uploadRows = [];
     private SecurityRow[] _securityRows = [];
     private UploadStatusRow? _selected;
@@ -86,15 +94,19 @@
     protected override Task OnInitializedAsync() => Search();
     private Task ShowUploads() => Switch(true);
     private Task ShowSecurity() => Switch(false);
-    private Task Switch(bool uploads) => Run(async () => { _uploads = uploads; _name = ""; await Load(1); });
-    private Task Search() => Run(() => Load(1));
-    private Task Prev() => Run(() => Load(Math.Max(1, _page - 1)));
-    private Task Next() => Run(() => Load(_page + 1));
-    private async Task Load(int page)
+    private Task Switch(bool uploads) => Run(async () => { _uploads = uploads; _name = ""; await SearchCore(); });
+    private Task Search() => Run(SearchCore);
+    private Task ChangePage(LmsTablePage page) => Run(() => Load(page.Page, page.Size));
+    private Task SearchCore()
     {
-        if (page == 1) _stableTo = DateOrNull(_to) ?? DateTimeOffset.UtcNow;
-        var f = new LogFilter(DateOrNull(_from), _stableTo, _name, _uploads ? Number(_min) : null, _uploads ? Number(_max) : null,
-            _uploads && Enum.TryParse<UploadState>(_status, out var s) ? s : null, _uploads ? ParseId(_tracking) : null, page, ParseId(_actor), _outcome);
+        _filter = new LogFilter(DateOrNull(_from), DateOrNull(_to) ?? DateTimeOffset.UtcNow, _name, _uploads ? Number(_min) : null, _uploads ? Number(_max) : null,
+            _uploads && Enum.TryParse<UploadState>(_status, out var s) ? s : null, _uploads ? ParseId(_tracking) : null, 1, ParseId(_actor), _outcome, _size);
+        return Load(1, _size);
+    }
+    private async Task Load(int page, int size)
+    {
+        if (_filter is null) return;
+        var f = _filter with { Page = page, Size = size };
         if (_uploads)
         {
             var result = await Post<LogPage<UploadStatusRow>>("logs/uploads", f);
@@ -105,7 +117,7 @@
             var result = await Post<LogPage<SecurityRow>>("logs/security", f);
             _securityRows = result.Rows; _more = result.HasMore;
         }
-        _page = page;
+        _page = page; _size = size;
     }
     private static long? Number(string value) => string.IsNullOrWhiteSpace(value) ? null : long.TryParse(ReusableAccess.Domain.Identity.IdentityRules.NormalizeDigits(value), out var n) && n >= 0
         ? n : throw new ArgumentException("حجم باید عدد صحیح نامنفی باشد.");

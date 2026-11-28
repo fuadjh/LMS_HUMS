@@ -169,6 +169,10 @@ internal sealed class LmsAccess(LmsData data, IHttpContextAccessor accessor)
     {
         if (!AdminIn(key, faculty, major, forRead)) throw LmsError.Missing();
     }
+    internal (Guid[] Faculties, Guid[] Majors) EducationScopes(string key) =>
+        (RoleHas(LmsPermissions.FacultyRole, key) ? _grants!.Where(g => g.MajorId == null).Select(g => g.FacultyId).Distinct().ToArray() : [],
+         RoleHas(LmsPermissions.MajorRole, key) ? _grants!.Where(g => g.MajorId != null).Select(g => g.MajorId!.Value).Distinct().ToArray() : []);
+
     internal bool CanAdminOffering(string key, OfferingInfo info)
         => _actor?.IsPlatformSuperAdmin == true || (info.Offering.Audience != OfferingAudience.General &&
             AdminIn(key, info.Course.FacultyId, info.Offering.OwnerMajorId));

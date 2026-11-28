@@ -1,0 +1,59 @@
+@inherits LmsPage
+<LmsDialog Visible="@Visible" VisibleChanged="SetOpen" Title="@(Kind == "courses" ? "ورود درس‌ها از اکسل" : "ورود ارائه دروس از اکسل")"
+           Busy="@Busy" Error="@Error" Lead="فقط دادهٔ معتبر ثبت می‌شود؛ ردیف موجود بازنویسی نمی‌شود.">
+    <div class="lms-row"><a class="lms-file" href="@($"/lms-templates/{Kind}.xlsx")" download>دریافت قالب XLSX</a></div>
+    <div class="lms-grid">
+        <LmsChoice Label="رشته" Options="@Majors" Value="@_major" ValueChanged="ChangeMajor" Disabled="@Busy" />
+        @if (Kind == "offerings")
+        { <LmsChoice Label="نیم‌سال" Options="@Terms" Value="@_term" ValueChanged="ChangeTerm" Disabled="@Busy" /> }
+    </div>
+    <p class="lms-muted">شناسه‌ها را به‌صورت متن در برگهٔ اول وارد کنید (حداکثر ۵۰۰ ردیف).
+        @if (Kind == "offerings") { <span>استاد با کد سازمانی یکتا در رشته انتخاب می‌شود. ارائهٔ واردشده تخصصی و منتشرنشده است.</span> }
+    </p>
+    @if (_major is { } id && (Kind == "courses" || _term.HasValue))
+    { <LmsUpload @key="_inputKey" TargetId="@id" Purpose="MediaPurpose.RosterExcel" Disabled="@Busy" Uploaded="FileReady" /> }
+    <div class="lms-row">
+        <MudButton Disabled="@(Busy || _file is null)" OnClick="Preview">پیش‌نمایش و اعتبارسنجی</MudButton>
+        <MudButton Disabled="@(Busy || _applied || !_results.Any(r => r.Status == "آماده"))" Variant="Variant.Filled" Color="Color.Primary" OnClick="Apply">ثبت ردیف‌های معتبر</MudButton>
+    </div>
+    @if (_results.Length > 0)
+    {
+        <AppDataTable @key="_resultKey" TRow="AcademicWorkbookRow" Items="@_results" Caption="نتیجهٔ ورود فایل" RowKey="@(r => r.Line)" Loading="@Busy">
+            <Columns><th scope="col">ردیف</th><th scope="col">درس / گروه</th><th scope="col">وضعیت</th><th scope="col">جزئیات</th></Columns>
+            <RowCells Context="r"><td>@Fa(r.Line)</td><td><bdi>@r.Label</bdi></td><td>@r.Status</td><td>@r.Detail</td></RowCells>
+        </AppDataTable>
+    }
+</LmsDialog>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter, EditorRequired] public string Kind { get; set; } = "courses";
+    [Parameter] public IEnumerable<CatalogRow> Majors { get; set; } = [];
+    [Parameter] public IEnumerable<CatalogRow> Terms { get; set; } = [];
+    [Parameter] public EventCallback Imported { get; set; }
+    private Guid? _major, _term, _file;
+    private int _inputKey, _resultKey;
+    private bool _applied;
+    private AcademicWorkbookRow[] _results = [];
+    private Task SetOpen(bool value) => VisibleChanged.InvokeAsync(value);
+    private Task ChangeMajor(Guid? id) { _major = id; Reset(); return Task.CompletedTask; }
+    private Task ChangeTerm(Guid? id) { _term = id; Reset(); return Task.CompletedTask; }
+    private void Reset() { _inputKey++; _file = null; _results = []; _applied = false; }
+    private Task FileReady(FileRow row) { _file = row.Id; _results = []; _applied = false; return Task.CompletedTask; }
+    private string Root => $"academic-import/{Kind}";
+    private Task Preview() => Run(async () =>
+    {
+        if (_file is not { } file || _major is not { } major) return;
+        _results = await Get<AcademicWorkbookRow[]>($"{Root}/preview?mediaId={file:D}&majorId={major:D}" + (_term is { } t ? $"&termId={t:D}" : ""));
+        _resultKey++; _applied = false;
+    });
+    private Task Apply() => Run(async () =>
+    {
+        if (_file is not { } file || _major is not { } major || _applied || !_results.Any(r => r.Status == "آماده")) return;
+        _results = await Post<AcademicWorkbookRow[]>(Root, new AcademicWorkbookInput(file, major, _term));
+        _applied = true; _resultKey++;
+        Snack.Add($"{Fa(_results.Count(x => x.Status == "ثبت شد"))} ردیف ثبت شد.", Severity.Info);
+        await Imported.InvokeAsync();
+    });
+}

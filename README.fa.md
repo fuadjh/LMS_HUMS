@@ -1,5 +1,7 @@
 # ReusableAccess + سامانهٔ یادگیری دانشگاهی
 
+**تحویل این نسخه:** [راهنمای مدیر، کارگاه محتوای آموزشی، مهاجرت و وضعیت آزمون](docs/LMS-LEARNING-RELEASE.fa.md). پیش از اجرای API روی DB موجود، مهاجرت `20261126183000_LearningCurriculumAndMajorCourses` را روی نسخهٔ آزمایشی بررسی کنید.
+
 **نسخهٔ بازطراحی برای بیلد و تست محلی.** این ZIP، کل Solution است، نه پچ یا پیش‌نمایش. پایهٔ مستقیم، پیوست `LMS_HUMS-master (1).zip` با شناسهٔ `b306a67f6b96d60693151fd1830d480e1cfd0fa4` از مخزن `fuadjh/LMS_HUMS` است.
 
 - [گزارش بررسی ورودی، تغییرات، مهاجرت و معیار پذیرش](docs/LMS-WORKSPACE.fa.md) · [فهرست فایل‌های تغییرکرده](docs/WORKSPACE-CHANGES.txt)
@@ -23,9 +25,9 @@
 ۳. قبل از اجرای API، مهاجرت‌ها را روی **پایگاه آزمایشی** اعمال و تطابق مدل را بررسی کنید:
 
 ```bash
- dotnet ef migrations list --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext -c Release --no-build
- dotnet ef migrations has-pending-model-changes --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext -c Release --no-build
- dotnet ef database update --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext -c Release --no-build
+ dotnet ef migrations list --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build
+ dotnet ef migrations has-pending-model-changes --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build
+ dotnet ef database update --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build
 ```
 
 ۴. API و Web را در دو ترمینال، با تنظیمات مخصوص هر میزبان اجرا کنید:

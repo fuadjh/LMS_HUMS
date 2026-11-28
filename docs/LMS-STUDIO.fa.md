@@ -31,8 +31,8 @@ dotnet restore ReusableAccess.slnx
 dotnet build ReusableAccess.slnx -c Release --no-restore
 dotnet test ReusableAccess.slnx -c Release --no-build
 dotnet tool restore
-dotnet ef migrations has-pending-model-changes --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext -c Release --no-build
-dotnet ef migrations script 20261121203400_AddUniversityLms 20261125090000_AddLmsStudio --idempotent --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext -c Release --no-build --output studio-upgrade.sql
+dotnet ef migrations has-pending-model-changes --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build
+dotnet ef migrations script 20261121203400_AddUniversityLms 20261125090000_AddLmsStudio --idempotent --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build --output studio-upgrade.sql
 ```
 
 در تست SQL از یک سرور **جدا از تولید** استفاده کنید (متغیر `RA_SQLSERVER_TEST_CONNECTION`، پایگاه آزمایشی جدا توسط تست ساخته می‌شود). نصب خالی و ارتقا روی کپی را جدا چک کنید. ابتدا آزمون‌های `AcademicScheduleTests` و `LmsPersistenceTests`، بعد مرورگر روی Web/API واقعی: دو تب و خطای 409، دسترسی مستقیم خارج از قلمرو، دریافت واقعی کاور/ویدئو، روز کبیسه و نوروز، جای قرارگیری انتخاب‌گر در مودال در موبایل، Enter/Escape، پاک‌کردن تاریخ خالی بدون ایجاد مقدار، انتشار تکراری و گردش‌های قدیمی اخذ/حذف. تست عبورنکرده یا `Skipped` به‌معنی موفقیت نیست. شاهد اجرا در این ZIP از این دستورهای **پیشنهادی** جداست؛ [گزارش بازبینی](STUDIO-REVIEW.fa.md).

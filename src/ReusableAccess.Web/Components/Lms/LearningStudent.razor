@@ -1,0 +1,221 @@
+@inherits LmsPage
+@inject IJSRuntime JS
+@implements IDisposable
+
+<section class="learning-scope" aria-label="فضای یادگیری دوره" aria-busy="@(_loading ? "true" : "false")">
+    <LearningHeader Offering="@(Offering ?? _offering)" Id="@OfferingId" View="@View" Title="@Title" Summary="@_course?.Summary" Draft="@Draft"
+                    Hero="@(LessonId is null && _course is not null)" ShowDraft="@ShowDraft" Status="@Status">
+        <Actions>
+            @if (First is { } item)
+            { <a class="course-btn mint" href="@LessonUrl(item.Id)"><LearningIcon Name="arrow" Size="15" /> ادامه یادگیری</a> }
+            else if (View == "student" && _course?.VisibleLessons > 0)
+            { <span class="course-btn mint"><LearningIcon Name="check" Size="15" />همه درس‌ها تکمیل شده‌اند</span> }
+        </Actions>
+    </LearningHeader>
+    @if (_loadError is not null)
+    {
+        <section class="course-card study-intro" role="alert"><h2 tabindex="-1" @ref="_heading">@_loadError</h2>
+            <a class="course-btn quiet small publish-next" href="@Back"><LearningIcon Name="back" Size="15" /> @BackLabel</a>
+        </section>
+    }
+    else if (_loading && _course is null && _lesson is null && _material is null)
+    { <p class="empty-course" role="status">در حال دریافت محتوای دوره…</p> }
+    else if (MaterialKey.HasValue && _material is { } detail)
+    {
+        <section class="course-card resource-card">
+            <div><a class="course-btn quiet small" href="@Back"><LearningIcon Name="back" Size="15" />بازگشت به درس</a></div>
+            <h2 tabindex="-1" @ref="_heading">@detail.Material.Title</h2>
+            <div><LearningType Kind="@detail.Material.Kind" /></div>
+            @if (!string.IsNullOrWhiteSpace(detail.Material.Description)) { <p>@detail.Material.Description</p> }
+            @if (detail.Material.Kind == LearningKind.Text)
+            { <div class="course-card text-copy">@detail.Body</div> }
+            else if (detail.FileId is { } file)
+            {
+                var src = LearningUi.File(file);
+                @if (detail.Material.Kind == LearningKind.Video)
+                { <video controls playsinline preload="none" poster="@LearningUi.Cover(detail.Material.Thumbnail)" src="@src" aria-label="@detail.Material.Title"></video> }
+                else if (detail.Material.Kind == LearningKind.Audio)
+                { <audio controls preload="none" src="@src" aria-label="@detail.Material.Title"></audio> }
+                else if (detail.Material.Kind == LearningKind.Image)
+                { <img class="preview-art" src="@src" alt="@(string.IsNullOrWhiteSpace(detail.Material.Alt) ? detail.Material.Title : detail.Material.Alt)" /> }
+                @if (detail.Material.Kind is LearningKind.Pdf or LearningKind.LegacyFile)
+                { <div class="resource-file"><LearningThumbnailView Thumbnail="@detail.Material.Thumbnail" /></div> }
+                <div><a class="course-btn quiet" href="@src" download="@detail.FileName"><LearningIcon Name="download" Size="16" />دانلود فایل</a></div>
+            }
+            else { <p>این فایل در دسترس نیست.</p> }
+        </section>
+    }
+    else if (LessonId.HasValue && _lesson is { } lesson)
+    {
+        <div class="course-stack">
+            <section class="course-card study-intro">
+                <div><a class="course-btn quiet small" href="@CourseUrl"><LearningIcon Name="back" Size="15" />بازگشت به فهرست</a></div>
+                <span class="breadcrumb-label">فصل @LearningUi.Ordinal(lesson.ChapterIndex): @lesson.ChapterTitle / درس @LearningUi.Ordinal(lesson.LessonIndex)</span>
+                <h2 tabindex="-1" @ref="_heading">@lesson.Lesson.Title</h2>
+                @if (!string.IsNullOrWhiteSpace(lesson.Lesson.Summary)) { <p>@lesson.Lesson.Summary</p> }
+                @if (lesson.CanComplete && View == "student")
+                {
+                    <div class="hero-actions"><button type="button" class="course-btn @(lesson.Lesson.Completed ? "quiet" : "solid")"
+                        @onclick="Toggle" disabled="@Busy" aria-pressed="@(lesson.Lesson.Completed ? "true" : "false")">
+                        <LearningIcon Name="check" /> @(lesson.Lesson.Completed ? "تکمیل‌شده · لغو تکمیل" : "تکمیل درس")</button></div>
+                }
+                else if (lesson.Lesson.Completed) { <span class="state-label done publish-next">تکمیل‌شده</span> }
+                @if (Error is not null) { <p class="learning-toast" role="alert">@Error</p> }
+            </section>
+            <h3>محتواهای درس <small>(@Fa(lesson.Materials.Length))</small></h3>
+            @if (lesson.Materials.Length == 0) { <p class="empty-course">این درس هنوز محتوایی ندارد.</p> }
+            else
+            {
+                <ol class="resource-list">
+                    @foreach (var m in lesson.Materials)
+                    {
+                        var url = LessonUrl(lesson.Lesson.Id, m.Key);
+                        <li class="course-card resource-row" @key="m.Key">
+                            <a href="@url" aria-label="@($"باز کردن {m.Title}")"><LearningThumbnailView Thumbnail="@m.Thumbnail" /></a>
+                            <div><h4><a class="lesson-title-link" href="@url">@m.Title</a></h4><div><LearningType Kind="@m.Kind" /></div>
+                                @if (!string.IsNullOrWhiteSpace(m.Description)) { <p>@m.Description</p> }</div>
+                            <a class="course-btn small" href="@url"><LearningIcon Name="@(m.Kind == LearningKind.Video ? "play" : "arrow")" Size="15" />
+                                @(m.Kind == LearningKind.Video ? "مشاهده ویدئو" : "باز کردن محتوا")</a>
+                        </li>
+                    }
+                </ol>
+            }
+            <div class="study-nav">
+                @if (lesson.PreviousId is { } previous) { <a class="course-btn quiet" href="@LessonUrl(previous)"><LearningIcon Name="back" Size="15" />درس قبلی</a> }
+                else { <span></span> }
+                @if (lesson.NextId is { } next) { <a class="course-btn quiet" href="@LessonUrl(next)"><LearningIcon Name="arrow" Size="15" />درس بعدی</a> }
+            </div>
+        </div>
+    }
+    else if (_course is { } curriculum)
+    {
+        <div class="course-layout">
+            <div class="course-stack">
+                <div class="section-open"><h2 tabindex="-1" @ref="_heading">فهرست درس‌ها</h2><p>@Fa(curriculum.Chapters.Length) فصل · @Fa(curriculum.VisibleLessons) درس @(Draft ? "در پیش‌نویس" : "منتشرشده")</p></div>
+                @if (curriculum.VisibleLessons == 0) { <p class="empty-course">@(Draft ? "در پیش‌نویس درسی تعریف نشده است." : "هنوز درسی منتشر نشده است.")</p> }
+                @foreach (var (ch, i) in curriculum.Chapters.Select((value, index) => (value, index)))
+                {
+                    <details class="course-card course-chapter" id="@ChapterAnchor(ch.Id)" open @key="ch.Id">
+                        <summary><span class="chapter-number" aria-hidden="true">@Fa(i + 1)</span>
+                            <span class="chapter-heading"><strong>فصل @LearningUi.Ordinal(i): @ch.Title</strong>
+                                @if (!string.IsNullOrWhiteSpace(ch.Summary)) { <small>@ch.Summary</small> }</span>
+                            <span class="chapter-meta">@Fa(ch.Lessons.Length) درس <LearningIcon Name="chevron" Size="15" Class="chapter-arrow" /></span>
+                        </summary>
+                        @foreach (var (l, j) in ch.Lessons.Select((value, index) => (value, index)))
+                        {
+                            var route = LessonUrl(l.Id);
+                            <article class="lesson-row" @key="l.Id">
+                                <LearningThumbnailView Thumbnail="@l.Thumbnail" />
+                                <div class="lesson-name"><span class="ordinal">درس @LearningUi.Ordinal(j)</span><h3><a class="lesson-title-link" href="@route">@l.Title</a></h3>
+                                    <div class="lesson-meta">
+                                        @if (l.Count > 0) { <LearningType Kind="@l.Thumbnail.Kind" /> }
+                                        @if (l.Count > 1) { <span class="type-label">@Fa(l.Count) محتوا</span> }
+                                        @if (l.Completed) { <span class="state-label done">تکمیل‌شده</span> }
+                                    </div>
+                                </div>
+                                <p class="lesson-summary">@l.Summary</p>
+                                <span class="row-action"><a class="course-btn small" href="@route"><LearningIcon Name="arrow" Size="15" />ورود به درس</a></span>
+                            </article>
+                        }
+                    </details>
+                }
+            </div>
+            <div class="course-stack">
+                <section class="course-card course-progress">
+                    <h2><LearningIcon Name="trend" Size="18" /> پیشرفت دوره</h2>
+                    <strong class="progress-number">@Fa(LearningUi.Percent(curriculum.CompletedLessons, curriculum.VisibleLessons))٪</strong>
+                    <progress aria-label="پیشرفت دوره" value="@curriculum.CompletedLessons" max="@Math.Max(1, curriculum.VisibleLessons)"></progress>
+                    <p>@Fa(curriculum.CompletedLessons) از @Fa(curriculum.VisibleLessons) درس تکمیل شده</p>
+                    @if (View == "preview") { <p>پیش‌نمایش، پیشرفت واقعی ثبت نمی‌کند.</p> }
+                    @if (curriculum.Chapters.Length != 0)
+                    {
+                        <div class="index-links" aria-label="دسترسی سریع به فصل‌ها">
+                            @foreach (var (ch, i) in curriculum.Chapters.Select((value, index) => (value, index)))
+                            {
+                                <a @key="ch.Id" href="@($"#{ChapterAnchor(ch.Id)}")" @onclick="() => Jump(ch.Id)" @onclick:preventDefault>
+                                    <LearningIcon Name="layers" Size="14" /> فصل @LearningUi.Ordinal(i): @ch.Title</a>
+                            }
+                        </div>
+                    }
+                </section>
+                <section class="learning-note"><h3><LearningIcon Name="info" Size="16" /> راهنمای مطالعه</h3>
+                    <p>ابتدا خلاصهٔ درس را بخوانید. پس از مرور منابع، گزینهٔ «تکمیل درس» را بزنید تا پیشرفت شما ثبت شود.</p></section>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public Guid OfferingId { get; set; }
+    [Parameter] public OfferingRow? Offering { get; set; }
+    [Parameter] public string View { get; set; } = "student";
+    [Parameter] public Guid? LessonId { get; set; }
+    [Parameter] public Guid? MaterialKey { get; set; }
+    [Parameter] public bool Draft { get; set; }
+    [Parameter] public bool ShowDraft { get; set; }
+    private (Guid, string, Guid?, Guid?, bool)? _current;
+    private CancellationTokenSource? _request;
+    private OfferingRow? _offering;
+    private LearningCurriculum? _course;
+    private LearningLessonView? _lesson;
+    private LearningReadMaterial? _material;
+    private ElementReference _heading;
+    private string? _loadError;
+    private bool _loading, _focus;
+    private string Title => _course?.Title ?? (Offering ?? _offering)?.Course ?? "فضای یادگیری";
+    private string Status => Draft ? "پیش‌نمایش پیش‌نویس" : View == "preview" ? "پیش‌نمایش نسخهٔ منتشرشده" : "محتوای قابل مشاهده";
+    private string CourseUrl => LearningUi.Offer(OfferingId, View is "student" or "preview" ? View : "student", Draft);
+    private string Root => $"offerings/{OfferingId:D}/learning";
+    private LearningLessonRow? First => _course?.Chapters.SelectMany(c => c.Lessons).FirstOrDefault(l => !l.Completed);
+    private string Back => MaterialKey.HasValue && LessonId is { } id ? LessonUrl(id) : CourseUrl;
+    private string BackLabel => MaterialKey.HasValue ? "بازگشت به درس" : "بازگشت به فهرست";
+    private string LessonUrl(Guid lesson, Guid? media = null) => LearningUi.Study(OfferingId, View, lesson, media, Draft);
+    private string ChapterAnchor(Guid chapter) => $"chapter-{OfferingId:N}-{chapter:N}";
+    private async Task Jump(Guid chapter) => await JS.InvokeVoidAsync("raLearning.jump", ChapterAnchor(chapter));
+    protected override async Task OnParametersSetAsync()
+    {
+        var next = (OfferingId, View, LessonId, MaterialKey, Draft);
+        if (_current == next) return;
+        _current = next;
+        _request?.Cancel(); _request?.Dispose(); _request = new();
+        var ct = _request.Token;
+        _course = null; _lesson = null; _material = null; _offering = null; _loadError = null;
+        _loading = true;
+        try
+        {
+            if (View is not ("preview" or "student")) { _loadError = "این نما یافت نشد."; return; }
+            var context = Draft ? "draft" : View;
+            if (Offering is null)
+            {
+                var meta = await Get<OfferingDetails>($"offerings/{OfferingId:D}?view={View}&includeContent=false", ct);
+                ct.ThrowIfCancellationRequested(); _offering = meta.Offering;
+            }
+            var root = $"offerings/{next.OfferingId:D}/learning";
+            if (next.LessonId is not { } l)
+            { var data = await Get<LearningCurriculum>($"{root}/curriculum?view={context}", ct); ct.ThrowIfCancellationRequested(); _course = data; }
+            else if (next.MaterialKey is { } m)
+            { var data = await Get<LearningReadMaterial>($"{root}/lessons/{l:D}/materials/{m:D}?view={context}", ct); ct.ThrowIfCancellationRequested(); _material = data; }
+            else
+            { var data = await Get<LearningLessonView>($"{root}/lessons/{l:D}?view={context}", ct); ct.ThrowIfCancellationRequested(); _lesson = data; }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (ConsoleApiException e)
+        { if (!ct.IsCancellationRequested) _loadError = e.StatusCode == 404 ? next.MaterialKey.HasValue ? "این محتوا یافت نشد." : next.LessonId.HasValue ? "این درس یافت نشد." : "این ارائه یافت نشد." : e.Message; }
+        finally { if (!ct.IsCancellationRequested) { _loading = false; _focus = true; } }
+    }
+    private Task Toggle() => Run(async () =>
+    {
+        if (_lesson is not { CanComplete: true } record || View != "student" || Draft) return;
+        var route = _current;
+        var done = await Post<bool>($"{Root}/lessons/{record.Lesson.Id:D}/completion", new LearningCompletion(!record.Lesson.Completed));
+        if (_current == route) _lesson = record with { Lesson = record.Lesson with { Completed = done } };
+    });
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focus) return;
+        _focus = false;
+        try { await _heading.FocusAsync(preventScroll: true); }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
+    }
+    public void Dispose() { _request?.Cancel(); _request?.Dispose(); }
+}

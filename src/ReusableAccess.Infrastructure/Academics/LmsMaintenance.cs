@@ -118,7 +118,10 @@ internal sealed class LmsMaintenance(IServiceScopeFactory provider, ILogger<LmsM
         await using (var tx = await data.Transaction(ct))
         {
             var unused = data.Db.Set<Media>().Where(m => m.CreatedUtc < oldest && (m.Purpose == MediaPurpose.RosterExcel ||
-                m.Purpose == MediaPurpose.Submission && !data.Read<SubmissionFile>().Any(f => f.MediaId == m.Id)));
+                m.Purpose == MediaPurpose.Submission && !data.Read<SubmissionFile>().Any(f => f.MediaId == m.Id) ||
+                (m.Purpose == MediaPurpose.CurriculumFile || m.Purpose == MediaPurpose.CurriculumCover) &&
+                !data.Read<LearningMaterial>().Any(r => r.MediaId == m.Id || r.CoverId == m.Id) &&
+                !data.Read<TemplateVersionMedia>().Any(r => r.MediaId == m.Id)));
             temporary = await unused.Select(x => x.Id).Take(100).ToArrayAsync(ct);
             await unused.Where(x => temporary.Contains(x.Id)).ExecuteDeleteAsync(ct);
             await tx.CommitAsync(ct);

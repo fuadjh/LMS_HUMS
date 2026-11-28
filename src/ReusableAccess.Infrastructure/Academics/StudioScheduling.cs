@@ -215,7 +215,7 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
     private IQueryable<OriginRow> Origins(OfferingInfo dest, Guid templateId, Guid? sourceId = null)
     {
         var actor = access.ActorId; var courseId = dest.Course.Id; var before = dest.Term.StartsUtc;
-        var publishedChapters = data.Read<Chapter>().Where(c => c.Active && c.TemplateItemKey != null && c.PublishedUtc != null);
+        var publishedChapters = data.Read<Chapter>().Where(c => c.Active && !c.Retired && c.PendingBaseId == null && c.TemplateItemKey != null && c.PublishedUtc != null);
         return from d in data.Read<OfferingScheduleDraft>()
                join v in data.Read<TemplateVersion>() on d.TemplateVersionId equals v.Id
                join o in data.Read<Offering>() on d.OfferingId equals o.Id
@@ -236,7 +236,7 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
             throw LmsError.Invalid("روش برنامه، مبدأ، روز شروع یا اصلاح‌های دستی معتبر نیست.");
         var (template, version) = await templates.Version(input.TemplateVersionId, target.Course.Id, ct);
         var (_, content, _, _) = StudioDocuments.Read(version);
-        if (content.Chapters.Length == 0 || content.Chapters.Any(ch => ch.Lessons.Length == 0 || ch.Lessons.Any(l => string.IsNullOrWhiteSpace(l.Body) && l.MediaIds.Length == 0)))
+        if (content.Chapters.Length == 0 || content.Chapters.Any(ch => ch.Lessons.Length == 0 || ch.Lessons.Any(l => string.IsNullOrWhiteSpace(l.Body) && l.MediaIds.Length == 0 && l.Materials is not { Length: > 0 })))
             throw LmsError.Conflict("ابتدا نسخه‌ای با درسکِ دارای متن یا فایل در هر فصل ذخیره کنید.");
         // Old and extracted versions can have missing schedules. They remain usable once a teacher provides dates.
         var items = StudioDocuments.ToSchedule(content);
@@ -266,7 +266,7 @@ internal sealed class StudioScheduling(LmsData data, LmsAccess access, StudioTem
         var id = info.Offering.Id;
         var start = await data.Read<OfferingScheduleDraft>().Where(x => x.OfferingId == id && x.State == ScheduleDraftState.Applied)
             .Select(x => (DateOnly?)x.ClassesStartDate).SingleOrDefaultAsync(ct);
-        var chapters = await data.Read<Chapter>().Where(c => c.OfferingId == id && c.Active && (!mappedOnly || c.PublishedUtc != null)).OrderBy(c => c.Position).ToArrayAsync(ct);
+        var chapters = await data.Read<Chapter>().Where(c => c.OfferingId == id && c.Active && !c.Retired && c.PendingBaseId == null && (!mappedOnly || c.PublishedUtc != null)).OrderBy(c => c.Position).ToArrayAsync(ct);
         var ids = chapters.Select(x => x.Id).ToArray();
         var lessons = (await data.Read<Lesson>().Where(l => ids.Contains(l.ChapterId) && l.Active && (!mappedOnly || !l.NeedsAvailabilityReview))
             .OrderBy(l => l.Position).ToArrayAsync(ct)).ToLookup(l => l.ChapterId);

@@ -11,7 +11,8 @@ public abstract class LmsPage : ComponentBase
     [Inject] protected ISnackbar Snack { get; set; } = default!;
     protected bool Busy { get; private set; }
     protected string? Error { get; private set; }
-    protected Task<T> Get<T>(string endpoint) => Api.GetAsync<T>("api/lms/" + endpoint);
+    protected void ClearError() => Error = null;
+    protected Task<T> Get<T>(string endpoint, CancellationToken cancellationToken = default) => Api.GetAsync<T>("api/lms/" + endpoint, cancellationToken: cancellationToken);
     protected Task<T> Post<T>(string endpoint, object? body = null) => Api.PostAsync<T>("api/lms/" + endpoint, body ?? new { });
     protected async Task Run(Func<Task> action, string? success = null)
     {

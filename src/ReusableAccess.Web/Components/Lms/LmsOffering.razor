@@ -1,17 +1,21 @@
 @page "/lms/offer/{Id:guid}/{View}"
 @attribute [Authorize]
 @inherits LmsPage
+@implements IDisposable
 
 <PageTitle>@(_details?.Offering.Course ?? "ارائهٔ درس")</PageTitle>
 <div class="@Panel">
+    @if (!LearningTab || _details is null)
+    {
     <header class="lms-head">
         <h1>@(_details?.Offering.Course ?? "ارائهٔ درس")</h1>
         @if (_details is { } d) { <p>گروه @Fa(d.Offering.Group) · @Fa(d.Offering.Term) · استاد مسئول @d.Offering.Lead</p> }
         <a href="@($"/lms/offerings/{(View == "preview" ? "teacher" : View)}")" style="color:white">بازگشت به ارائه‌ها</a>
     </header>
-    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
-    @if (Error is not null && !_editor && !_confirm && !_lessonOpen && !_gradeOpen && !_rosterOpen && !_templates && !_teachers)
-    { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
+    }
+    @if (Busy || _loading) { <MudProgressLinear Indeterminate="true" /> }
+    @if ((_routeError ?? Error) is { } error && !_editor && !_confirm && !_gradeOpen && !_rosterOpen && !_templates && !_teachers)
+    { <MudAlert Severity="Severity.Error">@error</MudAlert> }
     @if (_details is { } dd)
     {
         var o = dd.Offering;
@@ -21,7 +25,7 @@
                 @if (dd.ReadOnly) { <span class="lms-pill lms-warn">فقط‌خواندنی</span> }
                 @if (!o.Active) { <span class="lms-pill">بایگانی‌شده</span> }
             </div>
-            @if (View == "preview") { <p>پیش‌نمایش: زمان‌بندی و وضعیت انتشار رعایت می‌شود و هیچ فعالیت آموزشی ثبت نمی‌شود.</p> }
+            @if (View == "preview") { <p>@(IsDraft ? "پیش‌نمایش پیش‌نویس فقط برای مدرس مجاز؛ پیشرفت ثبت نمی‌شود." : "پیش‌نمایش: زمان‌بندی و وضعیت انتشار رعایت می‌شود و هیچ فعالیت آموزشی ثبت نمی‌شود.")</p> }
             @if (View is "teacher" or "admin") { <p class="lms-muted">نمایش از: <bdi>@DateText(o.VisibleUtc)</bdi> · @Publication(o)</p> }
             @if (View == "student") { <p class="lms-muted">پایان حذف‌واضافه: <bdi>@DateText(o.DropClosesUtc)</bdi></p> }
             <div class="lms-row">
@@ -39,7 +43,7 @@
                     <MudButton Href="@($"/lms/offer/{Id:D}/preview")">پیش‌نمایش دانشجو</MudButton>
                     <MudButton Href="@($"/lms/offer/{Id:D}/schedule-view")">تقویم واقعی و سابقه</MudButton>
                     @if (dd.TeacherEditor && _home?.ScheduleStudioEnabled == true && Can(LmsPermissions.Template) &&
-                         SelectedTab == "content" && dd.Chapters.Length == 0 && o.PublishedUtc == null)
+                         SelectedTab == "content" && !dd.HasChapters && o.PublishedUtc == null)
                     {
                         <MudButton Variant="Variant.Outlined" Href="@($"/lms/templates?course={o.CourseId:D}&target={Id:D}")">تنظیم تقویم از بانک الگو</MudButton>
                     }
@@ -76,59 +80,13 @@
             else
             { <LmsCourseDiscussion @key="Id" OfferingId="@Id" View="@View" /> }
         }
+        else if (View == "teacher")
+        {
+            <LearningTeacher @key="Id" Offering="@o" Step="@LearningStep" SelectedLesson="@SelectedLesson" />
+        }
         else
         {
-            @if (dd.TeacherEditor)
-            { <MudButton Color="Color.Primary" OnClick="() => EditChapter(null)">فصل جدید</MudButton> }
-            <div class="lms-grid">
-                @foreach (var c in dd.Chapters)
-                {
-                    <section class="lms-card" @key="c.Id">
-                        <div class="lms-row"><span class="lms-pill">فصل @Fa(c.Position)</span>
-                            @if (View == "teacher") { <span class="lms-pill">@(c.PublishedUtc.HasValue ? "منتشرشده" : c.Active ? "پیش‌نویس" : "بایگانی")</span> }
-                        </div>
-                        <h2>@c.Title</h2>
-                        @if (c.OpensUtc.HasValue || c.ClosesUtc.HasValue)
-                        {
-                            <p class="lms-muted">نمایش فصل: <bdi>@DateText(c.OpensUtc)</bdi> تا <bdi>@DateText(c.ClosesUtc)</bdi></p>
-                        }
-                        @foreach (var lesson in c.Lessons)
-                        {
-                            <div class="lms-row" @key="lesson.Id">
-                                @if (lesson.CoverMediaId is { } cover)
-                                { <img src="@FileUrl(cover)" alt="کاور ویدئوی درسک" width="64" height="48" loading="lazy" style="object-fit:cover;border-radius:.4rem" /> }
-                                <span>@lesson.Title</span>
-                                @if (lesson.Completed) { <span class="lms-pill lms-ok">تکمیل شده</span> }
-                                @if (!lesson.CanRead && lesson.ClosesUtc is { } close && close <= DateTimeOffset.UtcNow)
-                                { <small class="lms-muted">دسترسی پایان یافته است.</small> }
-                                else if (!lesson.CanRead) { <small class="lms-muted">هنوز در دسترس نیست · <bdi>@DateText(lesson.OpensUtc)</bdi></small> }
-                                else
-                                {
-                                    <MudButton OnClick="() => ShowLesson(c, lesson)">بازکردن درسک</MudButton>
-                                    @if (lesson.ClosesUtc is { } until) { <small class="lms-muted">پایان دسترسی: <bdi>@DateText(until)</bdi></small> }
-                                }
-                                @if (lesson.NeedsAvailabilityReview) { <span class="lms-pill lms-warn">بازبینی دسترسی لازم است</span> }
-                                @if (dd.TeacherEditor && c.PublishedUtc is null) { <MudButton OnClick="() => EditLesson(c, lesson)">ویرایش</MudButton> }
-                                @if (dd.TeacherEditor && c.PublishedUtc is not null && lesson.NeedsAvailabilityReview && lesson.Active)
-                                { <MudButton OnClick="() => EditLesson(c, lesson, true)">تنظیم دسترسی مستقل</MudButton> }
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(lesson.Summary)) { <p class="lms-muted">@lesson.Summary</p> }
-                        }
-                        @if (c.PublishedUtc is null && View == "teacher")
-                        {
-                            <div class="lms-row">
-                                @if (dd.TeacherEditor)
-                                {
-                                    <MudButton OnClick="() => EditChapter(c)">ویرایش فصل</MudButton>
-                                    <MudButton OnClick="() => EditLesson(c, null)">افزودن درسک</MudButton>
-                                }
-                                @if (dd.CanPublish && c.Active) { <MudButton Color="Color.Primary" OnClick="() => AskChapter(c)">انتشار فصل</MudButton> }
-                            </div>
-                        }
-                    </section>
-                }
-            </div>
-            @if (dd.Chapters.Length == 0) { <p class="lms-muted">در این نما هنوز فصلی قابل نمایش نیست.</p> }
+            <LearningStudent @key="(Id, View)" OfferingId="@Id" Offering="@o" View="@View" Draft="@IsDraft" />
         }
     }
 </div>
@@ -136,55 +94,21 @@
 <LmsDialog @bind-Visible="_confirm" Title="@_confirmTitle" Lead="@_confirmImpact" Busy="@Busy" Error="@Error" OnSave="Confirm" SaveText="تأیید عملیات">
     @if (_reasonNeeded) { <label>دلیل حذف مدیریتی<textarea @bind="_reason" maxlength="500"></textarea></label> }
 </LmsDialog>
-<LmsDialog @bind-Visible="_editor" Title="@_editTitle" Busy="@Busy" Error="@Error" OnSave="SaveEdit" Lead="زمان‌ها جلالی و به وقت تهران‌اند. فصل منتشرشده برای حفظ سوابق فقط خواندنی است.">
-    @if (_kind == "schedule")
-    { <PersianDateField Label="زمان دیده‌شدن ارائه" @bind-Value="_time" PreferredTime="@(new TimeOnly(8, 0))" Disabled="@Busy" /> }
-    else
-    {
-        @if (_kind != "legacy-availability")
-        {
-            <label>عنوان<input @bind="_title" maxlength="180" /></label>
-            <label>ترتیب<input type="number" min="1" max="1000" @bind="_position" /></label>
-            @if (_kind == "lesson") { <label>متن درسک<textarea @bind="_body" maxlength="32000"></textarea></label> }
-            <label class="lms-inline"><input type="checkbox" @bind="_sectionActive" /> فعال (بدون حذف رکورد)</label>
-        }
-        @if (_kind == "legacy-availability") { <p class="lms-muted">متن منتشرشده تغییر نمی‌کند؛ ثبت این بازه دسترسی مستقل را تأیید می‌کند.</p> }
-        <div class="lms-grid">
-            <PersianDateField Label="آغاز نمایش (اختیاری)" @bind-Value="_time" PreferredTime="@(new TimeOnly(8, 0))" Disabled="@Busy" />
-            <PersianDateField Label="پایان انحصاری نمایش (اختیاری)" @bind-Value="_contentEnd" Disabled="@Busy" />
-        </div>
-        <p class="lms-muted">روز بدون ساعت برای شروع یعنی ۰۸:۰۰ تهران؛ برای پایان یعنی قبل از شروع روز بعد.</p>
-    }
-</LmsDialog>
-<LmsDialog @bind-Visible="_lessonOpen" Title="@(_lesson?.Title ?? "درسک")" Error="@Error" Busy="@Busy">
-    @if (_lesson is { } l)
-    {
-        @if (!string.IsNullOrWhiteSpace(l.Summary)) { <p class="lms-muted">@l.Summary</p> }
-        <p class="lms-plain">@l.Body</p>
-        @foreach (var f in l.Files)
-        {
-            @if (f.Extension == ".mp4") { <video controls preload="metadata" src="@FileUrl(f.Id)" poster="@(l.CoverMediaId is { } posterId ? FileUrl(posterId) : null)" style="display:block;width:100%;max-height:50vh"></video> }
-            <p><a class="lms-file" href="@FileUrl(f.Id)" target="_blank" rel="noopener">@f.Name · @Size(f.Bytes)</a></p>
-        }
-        @if (View == "teacher" && _details?.TeacherEditor == true && _chapter?.PublishedUtc is null && Can(LmsPermissions.LessonUpload))
-        { <LmsUpload @key="l.Id" TargetId="@l.Id" Purpose="MediaPurpose.LessonMaterial" Uploaded="LessonFileReady" /> }
-        @if (View == "student" && _details?.ReadOnly == false && !l.Completed && Can(LmsPermissions.Progress))
-        { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Done" Disabled="@Busy">علامت‌گذاری تکمیل درسک</MudButton> }
-    }
+<LmsDialog @bind-Visible="_editor" Title="زمان نمایش ارائه" Busy="@Busy" Error="@Error" OnSave="SaveSchedule" Lead="ساعت‌ها به وقت تهران‌اند.">
+    <PersianDateField Label="زمان دیده‌شدن ارائه" @bind-Value="_time" PreferredTime="@(new TimeOnly(8, 0))" Disabled="@Busy" />
 </LmsDialog>
 <LmsDialog @bind-Visible="_rosterOpen" Title="فهرست ثبت‌نام‌ها" Busy="@Busy" Error="@Error" Lead="خروج از درس صرفاً وضعیت ثبت‌نام را تغییر می‌دهد.">
     <label>جستجو در فهرست<input @bind="_rosterSearch" @bind:event="oninput" /></label>
-    @foreach (var r in _roster.Where(x => $"{x.Name} {x.Number}".Contains(_rosterSearch, StringComparison.OrdinalIgnoreCase)))
-    {
-        <article class="lms-card my-2">
-            <h3>@r.Name</h3><p>@r.StudyLabel · @r.Number · @State(r.Status)</p>
+    <AppDataTable TRow="RosterRow" Items="@(_roster.Where(x => $"{x.Name} {x.Number}".Contains(_rosterSearch, StringComparison.OrdinalIgnoreCase)).ToArray())"
+                  RowKey="@(r => r.EnrollmentId)" Caption="ثبت‌نام‌های ارائه" FilterKey="@_rosterSearch" Loading="@Busy">
+        <Columns><th scope="col">نام</th><th scope="col">پرونده</th><th scope="col">وضعیت</th><th scope="col">عملیات</th></Columns>
+        <RowCells Context="r"><td>@r.Name</td><td>@r.StudyLabel · @r.Number</td><td>@State(r.Status)</td><td>
             @if (View == "admin") { <MudButton OnClick="() => History(r)">تاریخچهٔ وضعیت</MudButton> }
             @if (r.CanRemove) { <MudButton Color="Color.Error" OnClick="() => AskRemove(r)">حذف مدیریتی</MudButton> }
             @if (View == "teacher" && _details?.Lead == true && (Can(LmsPermissions.Grade) || Can(LmsPermissions.Release)))
             { <MudButton OnClick="() => OpenFinal(r)">نمرهٔ پایانی غیررسمی</MudButton> }
-        </article>
-    }
-    @if (_roster.Length == 0) { <p>ثبت‌نامی یافت نشد.</p> }
+        </td></RowCells>
+    </AppDataTable>
 </LmsDialog>
 <LmsDialog @bind-Visible="_history" Title="تاریخچهٔ ثبت‌نام" Error="@Error" Busy="@Busy">
     @foreach (var item in _enrollmentHistory) { <p>@State(item.Status) · @DateText(item.OccurredUtc)</p><p class="lms-plain">@item.Reason</p> }
@@ -201,11 +125,11 @@
         <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveCo" Disabled="@Busy">ثبت تخصیص</MudButton>
     }
 </LmsDialog>
-<LmsDialog @bind-Visible="_templates" Title="قالب خصوصی و نسخه‌ها" Error="@Error" Busy="@Busy" Lead="فقط طرح، متن و فایل درسک ذخیره می‌شود؛ تکلیف و سابقهٔ دانشجو جدا هستند.">
+<LmsDialog @bind-Visible="_templates" Title="قالب خصوصی و نسخه‌ها" Error="@Error" Busy="@Busy" Lead="فقط ساختار و محتوای همین ارائه ذخیره می‌شود؛ تکلیف و سابقهٔ دانشجو جدا هستند.">
     <LmsChoice Label="قالب موجود یا قالب جدید" Options="@TemplateOptions" @bind-Value="_template" EmptyText="قالب جدید" />
     <label>نام قالب تازه<input @bind="_templateName" disabled="@_template.HasValue" /></label>
     <MudButton OnClick="SaveTemplate" Disabled="@Busy">ذخیرهٔ نسخهٔ تازه</MudButton>
-    @if (_details is { } ts && !ts.ReadOnly && ts.Chapters.Length == 0 && ts.Offering.PublishedUtc is null)
+    @if (_details is { } ts && !ts.ReadOnly && !ts.HasChapters && ts.Offering.PublishedUtc is null)
     {
         <LmsChoice Label="نسخه برای این پیش‌نویس خالی" Options="@VersionOptions" @bind-Value="_version" />
         <MudButton Color="Color.Primary" Variant="Variant.Outlined" OnClick="AskApply" Disabled="@Busy">استفاده از نسخه</MudButton>
@@ -235,8 +159,6 @@
     private string Root => $"offerings/{Id:D}";
     private LmsHome? _home;
     private OfferingDetails? _details;
-    private ChapterRow? _chapter;
-    private LessonRow? _lesson;
     private RosterRow[] _roster = [];
     private EnrollmentHistoryRow[] _enrollmentHistory = [];
     private bool _history;
@@ -244,14 +166,13 @@
     private CatalogRow[] _teacherOptions = [];
     private CatalogRow[] TemplateOptions => _versions.GroupBy(x => x.Id).Select(x => new CatalogRow(x.Key, x.First().Title)).ToArray();
     private CatalogRow[] VersionOptions => _versions.Select(x => new CatalogRow(x.VersionId, $"{x.Title} · نسخه {Fa(x.Version)}")).ToArray();
-    private bool _confirm, _editor, _lessonOpen, _rosterOpen, _gradeOpen, _templates, _teachers;
-    private bool _reasonNeeded, _sectionActive, _coGrade, _coPublish, _coActive;
-    private Guid? _editId, _parent, _template, _version, _coId;
+    private bool _confirm, _editor, _rosterOpen, _gradeOpen, _templates, _teachers;
+    private bool _reasonNeeded, _coGrade, _coPublish, _coActive;
+    private Guid? _template, _version, _coId;
     private Guid _gradedId;
-    private int _position;
     private decimal _score;
-    private string _confirmTitle = "", _confirmImpact = "", _reason = "", _editTitle = "", _kind = "", _title = "", _body = "", _feedback = "", _gradedName = "", _rosterSearch = "", _templateName = "";
-    private string? _time, _contentEnd;
+    private string _confirmTitle = "", _confirmImpact = "", _reason = "", _feedback = "", _gradedName = "", _rosterSearch = "", _templateName = "";
+    private string? _time;
     private GradeRow[] _gradeHistory = [];
     private Func<Task>? _saveConfirmed;
     private bool Can(string permission) => _home?.Permissions.Contains(permission) == true;
@@ -260,24 +181,46 @@
     private static readonly (string Key, string Label)[] Sections =
         [("content", "محتوای آموزشی"), ("online", "کلاس آنلاین"), ("assignments", "تکلیف"), ("discussion", "گفتگوی درسی")];
     private string SelectedTab => Tab is "online" or "assignments" or "discussion" ? Tab : "content";
-    protected override Task OnParametersSetAsync() => Run(async () =>
+    [SupplyParameterFromQuery(Name = "step")] public string? LearningStep { get; set; }
+    [SupplyParameterFromQuery(Name = "lesson")] public Guid? SelectedLesson { get; set; }
+    [SupplyParameterFromQuery(Name = "draft")] public bool? DraftPreview { get; set; }
+    private bool IsDraft => View == "preview" && DraftPreview == true && SelectedTab == "content";
+    private bool LearningTab => SelectedTab == "content" && View is ("student" or "teacher" or "preview");
+    private (Guid Id, string View, string Tab)? _route;
+    private CancellationTokenSource? _read;
+    private bool _loading;
+    private string? _routeError;
+    protected override async Task OnParametersSetAsync()
     {
-        _details = null; _confirm = _editor = _lessonOpen = _rosterOpen = _gradeOpen = _templates = _teachers = false;
-        if (View is not ("student" or "admin" or "teacher" or "preview")) throw new ArgumentException("نمای نامعتبر است.");
-        _home = await Get<LmsHome>("me"); await Load();
-    });
-    private async Task Load()
+        var route = (Id, View, SelectedTab);
+        if (_route == route) return;
+        _route = route;
+        _read?.Cancel(); _read?.Dispose(); _read = new();
+        var ct = _read.Token;
+        _details = null; _confirm = _editor = _rosterOpen = _gradeOpen = _templates = _teachers = _history = false;
+        _loading = true; _routeError = null; ClearError();
+        try
+        {
+            if (View is not ("student" or "admin" or "teacher" or "preview")) throw new ArgumentException("نمای نامعتبر است.");
+            var home = await Get<LmsHome>("me", ct);
+            ct.ThrowIfCancellationRequested(); _home = home;
+            await Load(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is ConsoleApiException or ArgumentException) { if (!ct.IsCancellationRequested) _routeError = ex.Message; }
+        finally { if (!ct.IsCancellationRequested) _loading = false; }
+    }
+    private async Task Load(CancellationToken ct = default)
     {
         var id = Id;
         var view = View;
         var tab = SelectedTab;
-        var includeContent = tab == "content" && view != "admin" ? "true" : "false";
-        var result = await Get<OfferingDetails>($"offerings/{id:D}?view={view}&includeContent={includeContent}");
-        if (id == Id && view == View && tab == SelectedTab) _details = result;
+        var result = await Get<OfferingDetails>($"offerings/{id:D}?view={view}&includeContent=false", ct);
+        if (!ct.IsCancellationRequested && id == Id && view == View && tab == SelectedTab) _details = result;
     }
+    public void Dispose() { _read?.Cancel(); _read?.Dispose(); }
     private static string Publication(OfferingRow o) => !o.Active ? "بایگانی" : o.Closed ? "پایان‌یافته" :
         o.PublishedUtc is null ? "منتشر نشده" : o.VisibleUtc is null || o.VisibleUtc > DateTimeOffset.UtcNow ? "منتشرشده؛ در انتظار نمایش" : "قابل مشاهده";
-    private static string FileUrl(Guid id) => $"/bff/lms/files/{id:D}";
     private void Ask(string title, string impact, Func<Task> action, bool reason = false)
     { _confirmTitle = title; _confirmImpact = impact; _reasonNeeded = reason; _reason = ""; _saveConfirmed = action; _confirm = true; }
     private Task Confirm() => Run(async () => { if (_saveConfirmed is not null) await _saveConfirmed(); _confirm = false; });
@@ -297,42 +240,13 @@
     }
     private void AskPublish() => Ask("انتشار ارائه", "در تاریخ نمایش، اطلاعات ارائه برای واجدان شرایط دیده می‌شود. زمان شروع مطالعه و تکلیف مستقل است.", async () =>
     { _ = await Post<bool>($"{Root}/publish"); Snack.Add("ارائه منتشر شد.", Severity.Success); await Load(); });
-    private void AskChapter(ChapterRow c) => Ask("انتشار فصل", "فصل به ارائه افزوده می‌شود؛ ترتیب و محتوای آن پس از انتشار ثابت می‌مانند.", async () =>
-    { _ = await Post<bool>($"{Root}/chapters/{c.Id:D}/publish"); Snack.Add("فصل منتشر شد.", Severity.Success); await Load(); });
-    private void Edit(string kind, string title, Guid? id, Guid? parent, string? contentTitle, bool active = true, int order = 1)
+    private void EditSchedule() { ClearError(); _time = DateInput(_details?.Offering.VisibleUtc); _editor = true; }
+    private Task SaveSchedule() => Run(async () =>
     {
-        _kind = kind; _editTitle = title; _editId = id; _parent = parent; _title = contentTitle ?? ""; _sectionActive = active; _position = order;
-        _time = _contentEnd = null; _body = ""; _editor = true;
-    }
-    private void EditSchedule() { Edit("schedule", "زمان نمایش ارائه", null, null, null); _time = DateInput(_details?.Offering.VisibleUtc); }
-    private void EditChapter(ChapterRow? c)
-    {
-        Edit("chapter", "فصل ارائه", c?.Id, null, c?.Title, c?.Active ?? true, c?.Position ?? ((_details?.Chapters.LastOrDefault()?.Position ?? 0) + 1));
-        _time = DateInput(c?.OpensUtc); _contentEnd = DateInput(c?.ClosesUtc);
-    }
-    private void EditLesson(ChapterRow c, LessonRow? l, bool legacy = false)
-    {
-        Edit(legacy ? "legacy-availability" : "lesson", "دسترسی مستقل درسک", l?.Id, c.Id, l?.Title, l?.Active ?? true,
-            l?.Position ?? ((c.Lessons.LastOrDefault()?.Position ?? 0) + 1));
-        _body = l?.Body ?? ""; _time = DateInput(l?.OwnOpensUtc); _contentEnd = DateInput(l?.OwnClosesUtc);
-    }
-    private Task SaveEdit() => Run(async () =>
-    {
-        var start = AvailabilityDate(_time);
-        if (_kind == "schedule") _ = await Post<bool>($"{Root}/schedule", new ScheduleEdit(start ?? throw new ArgumentException("زمان نمایش لازم است.")));
-        else _ = await Post<Guid>($"{Root}/content/{_kind}", new SectionEdit(_editId, _parent, _title, _position, _body,
-            start, AvailabilityDate(_contentEnd, true), _sectionActive));
-        _editor = false; Snack.Add("اطلاعات ارائه ثبت شد.", Severity.Success); await Load();
+        var start = AvailabilityDate(_time) ?? throw new ArgumentException("زمان نمایش لازم است.");
+        _ = await Post<bool>($"{Root}/schedule", new ScheduleEdit(start));
+        _editor = false; Snack.Add("زمان نمایش ثبت شد.", Severity.Success); await Load();
     });
-    private void ShowLesson(ChapterRow c, LessonRow l) { _chapter = c; _lesson = l; _lessonOpen = true; }
-    private async Task RefreshLesson()
-    {
-        await Load(); _chapter = _details?.Chapters.FirstOrDefault(c => c.Id == _chapter?.Id);
-        _lesson = _chapter?.Lessons.FirstOrDefault(l => l.Id == _lesson?.Id);
-    }
-    private Task LessonFileReady(FileRow _) => Run(RefreshLesson);
-    private Task Done() => Run(async () =>
-    { if (_lesson is not { } l) return; _ = await Post<bool>($"lessons/{l.Id:D}/done"); Snack.Add("پیشرفت ثبت شد.", Severity.Success); await RefreshLesson(); });
     private Task Roster() => Run(async () => { await LoadRoster(); _rosterSearch = ""; _rosterOpen = true; });
     private Task History(RosterRow row) => Run(async () =>
     { _enrollmentHistory = await Get<EnrollmentHistoryRow[]>($"enrollments/{row.EnrollmentId:D}/history?view=admin"); _rosterOpen = false; _history = true; });

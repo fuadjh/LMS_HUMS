@@ -1,4 +1,4 @@
-﻿@inherits UiPageBase
+@inherits UiPageBase
 @inject AuthenticationStateProvider Authentication
 @inject IJSRuntime JS
 
@@ -15,6 +15,16 @@
                      MaxHeight="520"
                      @bind-Open="_menuOpen"
                      @bind-Open:after="MenuChanged">
+                @if (AvatarSettings)
+                {
+                    <MudMenuItem OnClick="() => OpenAvatar.InvokeAsync()">
+                        <span class="ra-account-photo-menu">
+                            @if (AvatarId is { } id) { <img class="ra-account-photo" src="@($"/bff/lms/files/{id:D}")" alt="" /> }
+                            <span>تصویر پروفایل استاد</span>
+                        </span>
+                    </MudMenuItem>
+                    <MudDivider Class="my-2" />
+                }
                 <MudText Typo="Typo.caption" Class="px-4 py-3">
                     دسترسی‌های قابل‌انتخاب
                 </MudText>
@@ -70,6 +80,10 @@
 <ChangePasswordDialog @bind-Visible="_passwordOpen" />
 
 @code {
+    [Parameter] public Guid? AvatarId { get; set; }
+    [Parameter] public bool AvatarSettings { get; set; }
+    [Parameter] public EventCallback OpenAvatar { get; set; }
+
     private readonly string _logoutFormId =
         "ra-logout-" + Guid.NewGuid().ToString("N");
 

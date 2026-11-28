@@ -2,36 +2,49 @@
 @attribute [Authorize]
 @inherits LmsPage
 
-<PageTitle>ساختار دانشگاه</PageTitle>
+<PageTitle>@PageName</PageTitle>
 <div class="lms lms-admin">
-    <header class="lms-head"><h1>ساختار و تقویم آموزشی</h1><p>ورودی تحصیلی با نیم‌سال تدریس جداست. همهٔ ساعت‌ها به وقت تهران‌اند.</p><a href="/lms" style="color:white">میز کار</a></header>
-    <div class="lms-card lms-row">
-        @foreach (var group in Kinds) { <MudButton Variant="@(_kind == group.Key ? Variant.Filled : Variant.Text)" OnClick="() => Switch(group.Key)" Disabled="@Busy">@group.Value</MudButton> }
-    </div>
+    <header class="lms-head"><h1>@PageName</h1><p>@(Courses ? "کد درس در هر رشته یکتاست. رکورد قدیمی را پیش از ارائهٔ جدید به رشتهٔ درست وصل کنید." : "ورودی تحصیلی با نیم‌سال تدریس جداست. همهٔ ساعت‌ها به وقت تهران‌اند.")</p><a href="/lms" style="color:white">میز کار</a></header>
+    @if (!Courses)
+    {
+        <div class="lms-card lms-row">
+            @foreach (var group in Kinds.Where(x => x.Key != "courses"))
+            { <MudButton Variant="@(_kind == group.Key ? Variant.Filled : Variant.Text)" OnClick="() => Switch(group.Key)" Disabled="@Busy">@group.Value</MudButton> }
+        </div>
+    }
     @if (Error is not null && !_open) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
-    @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
-    <div class="lms-row">
-        <label>جستجو<input @bind="_search" @bind:event="oninput" placeholder="نام یا کد" /></label>
-        @if (CanWrite) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Edit(null)">افزودن</MudButton> }
-    </div>
-    <div class="lms-grid">
-        @foreach (var c in Filtered)
-        {
-            <article class="lms-card" @key="c.Id">
-                <h2>@c.Title</h2>
-                <div class="lms-row"><span class="lms-pill">@(c.Closed ? "بسته" : c.Active ? "فعال" : "بایگانی")</span><bdi>@c.Code</bdi></div>
-                @if (c.Calendar is { } calendar) { <p class="lms-muted">پایان نیم‌سال: <bdi>@DateText(calendar.EndsUtc)</bdi></p><p class="lms-muted">پایان حذف‌واضافه: <bdi>@DateText(calendar.DropClosesUtc)</bdi></p> }
-                @if (CanWrite && !c.Closed) { <MudButton OnClick="() => Edit(c)">ویرایش یا بایگانی</MudButton> }
-            </article>
-        }
-    </div>
-    @if (!Busy && !Filtered.Any()) { <p>رکوردی در این فهرست نیست.</p> }
+    <section class="lms-card mt-3">
+        <div class="ra-academic-tools">
+            <label>جستجو<input type="search" @bind="_search" @bind:event="oninput" placeholder="نام، کد یا رشته" /></label>
+            @if (CanWrite) { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Edit(null)">افزودن</MudButton> }
+            @if (Courses && CanWrite && _user?.Permissions.Contains(LmsPermissions.Import) == true)
+            { <MudButton Variant="Variant.Outlined" OnClick="OpenWorkbook">ورود از اکسل</MudButton> }
+        </div>
+        <AppDataTable @key="_kind" TRow="CatalogRow" Items="@Filtered" Caption="@(Kinds[_kind])" RowKey="@(c => c.Id)" Loading="@Busy" FilterKey="@_search">
+            <Columns>
+                <th scope="col">عنوان</th><th scope="col">کد</th>
+                @if (_kind is "majors" or "courses" or "programs" or "cohorts") { <th scope="col">وابستگی</th> }
+                @if (_kind == "terms") { <th scope="col">نیم‌سال</th><th scope="col">اخذ درس</th><th scope="col">حذف‌واضافه</th> }
+                <th scope="col">وضعیت</th><th scope="col">عملیات</th>
+            </Columns>
+            <RowCells Context="c">
+                <td><strong>@Fa(c.Title)</strong></td><td><bdi>@(c.Code ?? "—")</bdi></td>
+                @if (_kind is "majors" or "courses" or "programs" or "cohorts") { <td>@Fa(ParentLabel(c))</td> }
+                @if (c.Calendar is { } calendar && _kind == "terms")
+                { <td>@DateText(calendar.StartsUtc)<br />تا @DateText(calendar.EndsUtc)</td><td>@DateText(calendar.EnrollOpensUtc)<br />تا @DateText(calendar.EnrollClosesUtc)</td><td>@DateText(calendar.DropOpensUtc)<br />تا @DateText(calendar.DropClosesUtc)</td> }
+                <td><span class="lms-pill">@(c.Closed ? "بسته" : c.Active ? "فعال" : "بایگانی")</span></td>
+                <td>@if (CanWrite && !c.Closed) { <MudButton OnClick="() => Edit(c)">ویرایش</MudButton> }</td>
+            </RowCells>
+        </AppDataTable>
+    </section>
 </div>
+@if (Courses) { <LmsAcademicImport @key="_importKey" Kind="courses" Majors="@MajorOptions" @bind-Visible="_import" Imported="Refresh" /> }
 <LmsDialog @bind-Visible="_open" Title="@(Kinds[_kind])" Busy="@Busy" Error="@Error" Lead="بایگانی از گردش فعال خارج می‌کند، اما هیچ سابقه‌ای پاک نمی‌شود." OnSave="Save">
     <div class="lms-grid">
         @if (_kind is "faculties" or "majors" or "degrees" or "courses")
         { <label>کد<input @bind="_code" maxlength="50" /></label><label>نام<input @bind="_title" maxlength="180" /></label> }
-        @if (_kind is "majors" or "courses") { <LmsChoice Label="دانشکده" Options="@(Option("faculties"))" @bind-Value="_parent" Disabled="@_id.HasValue" /> }
+        @if (_kind == "majors") { <LmsChoice Label="دانشکده" Options="@(Option("faculties"))" @bind-Value="_parent" Disabled="@_id.HasValue" /> }
+        @if (_kind == "courses") { <LmsChoice Label="رشتهٔ درس" Options="@CourseEditOptions" @bind-Value="_parent" Disabled="@_fixedMajor" /> }
         @if (_kind == "programs")
         {
             <LmsChoice Label="رشته" Options="@(Option("majors"))" @bind-Value="_parent" Disabled="@_id.HasValue" />
@@ -58,24 +71,49 @@
 </LmsDialog>
 
 @code {
-    private static readonly Dictionary<string,string> Kinds = new() { ["faculties"] = "دانشکده‌ها", ["majors"] = "رشته‌ها", ["degrees"] = "مقاطع", ["programs"] = "برنامه‌های آموزشی", ["cohorts"] = "ورودی‌ها", ["terms"] = "نیم‌سال‌ها", ["courses"] = "کاتالوگ درس" };
+    private static readonly Dictionary<string,string> Kinds = new() { ["faculties"] = "دانشکده‌ها", ["majors"] = "رشته‌ها", ["degrees"] = "مقاطع", ["programs"] = "برنامه‌های آموزشی", ["cohorts"] = "ورودی‌ها", ["terms"] = "نیم‌سال‌ها", ["courses"] = "درس‌ها" };
     private static readonly string[] DateLabels = ["شروع نیم‌سال", "پایان نیم‌سال", "شروع اخذ", "پایان اخذ", "شروع حذف‌واضافه", "پایان حذف‌واضافه"];
     private readonly Dictionary<string,CatalogRow[]> _rows = [];
     private string _kind = "faculties", _search = "", _code = "", _title = "";
     private string?[] _dates = new string?[6];
     private LmsHome? _user;
-    private bool _open, _active, _close;
+    private bool _open, _active, _close, _import, _fixedMajor;
+    private int _importKey;
+    private Guid? _legacyFaculty;
+    [Parameter] public bool Courses { get; set; }
+    private string PageName => Courses ? "درس‌ها" : "ساختار و تقویم آموزشی";
+    private IEnumerable<CatalogRow> MajorOptions => Option("majors").Where(m => m.Active).Select(m => m with { Title = $"{m.Title} · {Faculty(m.ParentId)}" });
+    private IEnumerable<CatalogRow> CourseEditOptions => _fixedMajor ? Option("majors").Where(m => m.Id == _parent) : MajorOptions.Where(m => _legacyFaculty == null || m.ParentId == _legacyFaculty);
+    private string Faculty(Guid? id) => Option("faculties").FirstOrDefault(x => x.Id == id)?.Title ?? "—";
+    private string ParentLabel(CatalogRow c) => _kind switch
+    {
+        "courses" => c.ParentId is { } m ? Option("majors").FirstOrDefault(x => x.Id == m)?.Title ?? "—" : $"نیازمند تعیین رشته · {Faculty(c.RelatedId)}",
+        "majors" => Faculty(c.ParentId),
+        "programs" => Option("majors").FirstOrDefault(x => x.Id == c.ParentId)?.Title ?? "—",
+        "cohorts" => Option("programs").FirstOrDefault(x => x.Id == c.ParentId)?.Title ?? "—",
+        _ => "—"
+    };
     private Guid? _id, _parent, _related;
     private int _year;
     private TermSeason _season;
     private CatalogRow[] Option(string key) => _rows.GetValueOrDefault(key) ?? [];
-    private IEnumerable<CatalogRow> Filtered => Option(_kind).Where(x => $"{x.Title} {x.Code}".Contains(_search, StringComparison.OrdinalIgnoreCase));
+    private CatalogRow[] Filtered => Option(_kind).Where(x => $"{x.Title} {x.Code} {ParentLabel(x)}".Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
     private bool CanWrite => _user?.Permissions.Contains(LmsPermissions.CatalogWrite) == true && (_user.PlatformAdmin || _kind is not ("terms" or "faculties" or "degrees"));
-    protected override Task OnInitializedAsync() => Run(async () => { _user = await Get<LmsHome>("me"); await Reload(); });
+    protected override Task OnParametersSetAsync()
+    {
+        if (Courses) _kind = "courses";
+        else if (_kind == "courses") _kind = "faculties";
+        _open = _import = false; _search = "";
+        return _user is null ? Run(async () => { _user = await Get<LmsHome>("me"); await Reload(); }) : Task.CompletedTask;
+    }
+    private void OpenWorkbook() { _importKey++; _import = true; }
+    private Task Refresh() => Run(Reload);
     private async Task Reload() { foreach (var key in Kinds.Keys) _rows[key] = await Get<CatalogRow[]>("catalog/" + key); }
     private Task Switch(string key) { _kind = key; _search = ""; return Task.CompletedTask; }
     private void Edit(CatalogRow? row)
     {
+        _fixedMajor = row?.ParentId.HasValue == true;
+        _legacyFaculty = row?.ParentId is null ? row?.RelatedId : null;
         _id = row?.Id; _parent = row?.ParentId; _related = row?.RelatedId;
         _code = row?.Code ?? ""; _title = row?.Title ?? ""; _year = row?.Year is > 0 ? row.Year : new PersianCalendar().GetYear(JalaliTime.InTehran(DateTimeOffset.UtcNow));
         _season = row?.Season ?? TermSeason.Mehr; _active = row?.Active ?? true; _close = false;

@@ -1,5 +1,7 @@
 # اجرای مستقل، تنظیمات و تأیید استقرار
 
+برای ارتقای این بسته از V3 به V4، [راهنمای مهاجرت کارگاه محتوا و درس بر اساس رشته](LMS-LEARNING-RELEASE.fa.md#ارتقا-و-بیلد) مرجع است. مراحل تاریخی زیر برای نصب این نسخه کافی نیستند.
+
 ## تنظیمات مورد نیاز
 
 در Development از Secret Manager هر پروژه یا متغیر محیطی استفاده کنید. در Production از secret manager میزبان، مسیر پایدار و ACL محدود استفاده کنید. هیچ کدام از مقادیر واقعی را داخل سورس یا خروجی پشتیبانی نگذارید. الگوی تبدیل کلید: `:` → `__` در متغیر محیطی.
@@ -30,7 +32,7 @@
 4. نقطهٔ ارتقا `20261103062810_CompleteAdminIdentity` → `20261121203400_AddUniversityLms` است. قبل از اجرا `has-pending-model-changes` باید عبور کند و خروجی SQL تولید شود:
 
 ```bash
- dotnet ef migrations script 20261103062810_CompleteAdminIdentity 20261121203400_AddUniversityLms --idempotent --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext -c Release --no-build --output lms-upgrade.sql
+ dotnet ef migrations script 20261103062810_CompleteAdminIdentity 20261121203400_AddUniversityLms --idempotent --project src/ReusableAccess.Infrastructure --startup-project src/ReusableAccess.Api --context ApplicationDbContext --configuration Release --no-build --output lms-upgrade.sql
 ```
 
    SQL را DBA بررسی و روی نسخهٔ کپی اجرا کند. از `EnsureCreated` روی پایگاه موجود استفاده نکنید. `Down` مخرب عمداً فعال نیست؛ در بازگشتِ استقرار از backup تأییدشده و بازپخش کنترل‌شدهٔ دادهٔ بعد از ارتقا استفاده کنید. هویت runtime نباید DDL معمولاً لازم داشته باشد. EF migration به صورت خودکار در startup اعمال نمی‌شود.

@@ -7,18 +7,22 @@
     <header class="lms-head"><h1>@Title</h1><p>@Description</p><a href="/lms" style="color:white">میز کار</a></header>
     @if (Error is not null && !_edit) { <MudAlert Severity="Severity.Error">@Error</MudAlert> }
     @if (Busy) { <MudProgressLinear Indeterminate="true" /> }
-    <div class="lms-card lms-row">
+    <div class="lms-card ra-academic-tools">
         <LmsChoice Label="نیم‌سال ارائه" Options="@_terms" @bind-Value="_termFilter" EmptyText="همهٔ نیم‌سال‌ها" />
         @if (View != "teacher") { <LmsChoice Label="ورودی" Options="@_cohorts" @bind-Value="_cohortFilter" EmptyText="همهٔ واجد شرایط" /> }
         @if (View == "student") { <label class="lms-inline"><input type="checkbox" @bind="_mine" /> فقط سابقهٔ خودم</label> }
-        <MudButton OnClick="Reload" Disabled="@Busy">اعمال فیلتر</MudButton>
-        <MudButton Variant="Variant.Outlined" OnClick="OpenSearch">جستجو</MudButton>
+        <label>جستجو<input type="search" @bind="_search" maxlength="80" placeholder="عنوان درس یا کد گروه" /></label>
+        <MudButton OnClick="Reload" Disabled="@Busy">جستجو و اعمال فیلتر</MudButton>
         @if (View == "admin" && _home?.Permissions.Contains(LmsPermissions.Assign) == true)
-        { <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Start(null)">افزودن گروه</MudButton> }
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="() => Start(null)">افزودن ارائه</MudButton>
+            @if (_home.Permissions.Contains(LmsPermissions.Import)) { <MudButton Variant="Variant.Outlined" OnClick="OpenWorkbook">ورود از اکسل</MudButton> }
+        }
     </div>
     <section class="lms-card mt-3">
         <AppDataTable TRow="OfferingRow" Items="@_rows" RowKey="@(r => r.Id)" Caption="فهرست ارائه‌ها" Loading="@Busy"
-                      EmptyText="ارائه‌ای مطابق فیلتر یا قلمرو پیدا نشد.">
+                      EmptyText="ارائه‌ای مطابق فیلتر یا قلمرو پیدا نشد." FilterKey="@_appliedQuery"
+                      Total="@(View == "admin" ? _total : (int?)null)" ServerPage="@_page.Page" ServerSize="@_page.Size" PageChanged="GoPage">
             <Columns>
                 <th scope="col">درس و گروه</th><th scope="col">استاد مسئول</th><th scope="col">وضعیت</th><th scope="col">اقدام</th>
             </Columns>
@@ -37,20 +41,18 @@
                     <div class="lms-row">
                         <MudButton Variant="Variant.Outlined" Href="@($"/lms/offer/{row.Id:D}/{View}")">مشاهدهٔ ارائه</MudButton>
                         @if (View == "teacher") { <MudButton Href="@($"/lms/offer/{row.Id:D}/schedule-view")">تقویم واقعی</MudButton> }
-                        @if (View == "admin" && !row.Closed) { <MudButton OnClick="() => Start(row)">واگذاری یا بایگانی</MudButton> }
+                        @if (View == "admin" && !row.Closed && _home?.Permissions.Contains(LmsPermissions.Assign) == true) { <MudButton OnClick="() => Start(row)">واگذاری یا بایگانی</MudButton> }
                     </div>
                 </td>
             </RowCells>
         </AppDataTable>
     </section>
 </div>
-<LmsDialog @bind-Visible="_searchOpen" Title="جستجو در ارائه‌های مجاز" Busy="@Busy" Error="@Error" OnSave="Search" SaveText="جستجو">
-    <label>عنوان درس یا کد گروه<input @bind="_search" maxlength="80" /></label>
-    <p class="lms-muted">جستجو و فیلتر، واجدشرایط بودن دانشجو را عوض نمی‌کنند.</p>
-</LmsDialog>
+@if (View == "admin")
+{ <LmsAcademicImport @key="_importKey" Kind="offerings" Majors="@(_majors.Where(m => m.Active))" Terms="@(_terms.Where(t => t.Active && !t.Closed))" @bind-Visible="_import" Imported="Refresh" /> }
 <LmsDialog @bind-Visible="_edit" Title="تعریف و واگذاری ارائه" Busy="@Busy" Error="@Error" OnSave="Save" Lead="این فرم گروه تدریس را تعیین می‌کند، نه انتشار. بایگانی هیچ ثبت‌نام یا نمره‌ای را پاک نمی‌کند.">
     <div class="lms-grid">
-        <LmsChoice Label="درس کاتالوگ" Options="@_courses" @bind-Value="_course" Disabled="@_editing.HasValue" />
+        <LmsChoice Label="درس" Options="@CourseOptions" Value="@_course" ValueChanged="ChooseCourse" Disabled="@_editing.HasValue" />
         <LmsChoice Label="نیم‌سال" Options="@(_terms.Where(x => x.Active && !x.Closed))" @bind-Value="_term" Disabled="@_editing.HasValue" />
         <label>کد گروه<input @bind="_group" maxlength="50" disabled="@_published" /></label>
         <LmsChoice Label="استاد مسئول" Options="@_instructors" @bind-Value="_lead" Disabled="@_published" />
@@ -59,7 +61,7 @@
             <option value="Common">مشترک دانشکده</option><option value="Specialized">تخصصی رشته</option>
         </select></label>
         @if (_audience == OfferingAudience.Specialized)
-        { <LmsChoice Label="رشته" Options="@(_majors.Where(x => x.ParentId == _courses.FirstOrDefault(y => y.Id == _course)?.ParentId))" @bind-Value="_major" Disabled="@_published" /> }
+        { <LmsChoice Label="رشته" Options="@(_majors.Where(x => x.Id == _major))" @bind-Value="_major" Disabled="true" /> }
     </div>
     <p class="lms-muted">بدون انتخاب ورودی: همهٔ ورودی‌های واجد شرایط در مخاطب فوق.</p>
     <div style="max-height:14rem;overflow:auto">
@@ -72,14 +74,22 @@
 @code {
     [Parameter] public string View { get; set; } = "student";
     private string Panel => View == "admin" ? "lms lms-admin" : View == "teacher" ? "lms lms-teacher" : "lms";
-    private string Title => View == "admin" ? "مدیریت ارائه و گروه" : View == "teacher" ? "ارائه‌های تدریس من" : "دروس ارائه‌شده";
-    private string Description => View == "admin" ? "درس کاتالوگ با گروه تدریس و استاد مسئول فرق دارد." : View == "teacher" ? "محتوای آموزشی، تکالیف مستقل و تاریخچهٔ تدریس" : "گروه‌های واجد شرایط، درس‌های اخذشده و وضعیت حذف‌واضافه";
+    private string Title => View == "admin" ? "ارائه دروس" : View == "teacher" ? "ارائه‌های تدریس من" : "دروس ارائه‌شده";
+    private string Description => View == "admin" ? "گروه‌ها، استادان مسئول و نیم‌سال‌های ارائهٔ درس" : View == "teacher" ? "محتوای آموزشی، تکالیف مستقل و تاریخچهٔ تدریس" : "گروه‌های واجد شرایط، درس‌های اخذشده و وضعیت حذف‌واضافه";
     private LmsHome? _home;
     private OfferingRow[] _rows = [];
     private CatalogRow[] _terms = [], _cohorts = [], _courses = [], _majors = [], _instructors = [];
     private Guid? _termFilter, _cohortFilter, _editing, _term, _course, _lead, _major;
     private string _search = "", _group = "";
-    private bool _mine, _edit, _searchOpen, _active, _published;
+    private bool _mine, _edit, _import, _active, _published;
+    private int _total, _importKey;
+    private string _appliedQuery = "";
+    private LmsTablePage _page = new();
+    private CatalogRow? Course => _courses.FirstOrDefault(c => c.Id == _course);
+    private IEnumerable<CatalogRow> CourseOptions => _courses.Where(c => _editing.HasValue ? c.Id == _course : c.Active && c.ParentId != null)
+        .Select(c => c with { Title = $"{c.Title} · {_majors.FirstOrDefault(m => m.Id == c.ParentId)?.Title ?? "—"}" });
+    private Task ChooseCourse(Guid? id) { _course = id; _major = Course?.ParentId; return Task.CompletedTask; }
+    private void OpenWorkbook() { _importKey++; _import = true; }
     private OfferingAudience _audience;
     private HashSet<Guid> _targets = [];
     protected override Task OnParametersSetAsync() => Run(async () =>
@@ -92,16 +102,30 @@
             _courses = await Get<CatalogRow[]>("catalog/courses"); _majors = await Get<CatalogRow[]>("catalog/majors");
             _instructors = (await Get<PeopleRow[]>("people/teacher")).Where(p => p.ProfileActive && p.AccountActive).Select(p => new CatalogRow(p.UserId, p.DisplayName)).ToArray();
         }
+        _page = new(); _appliedQuery = Query();
         await Load();
     });
-    private async Task Load() => _rows = await Get<OfferingRow[]>($"offerings?view={View}&mine={_mine.ToString().ToLowerInvariant()}&search={Q(_search)}"
-        + (_termFilter is { } t ? $"&termId={t:D}" : "") + (_cohortFilter is { } c ? $"&cohortId={c:D}" : ""));
-    private Task Reload() => Run(Load);
-    private void OpenSearch() => _searchOpen = true;
-    private Task Search() => Run(async () => { await Load(); _searchOpen = false; });
+    private string Query() => $"search={Q(_search)}" + (_termFilter is { } t ? $"&termId={t:D}" : "") +
+        (_cohortFilter is { } c ? $"&cohortId={c:D}" : "");
+    private async Task Load()
+    {
+        if (View == "admin")
+        {
+            var result = await Get<LmsTableSlice<OfferingRow>>($"admin-tables/offerings?{_appliedQuery}&page={_page.Page}&size={_page.Size}");
+            _rows = result.Rows; _page = new(result.Page, result.Size); _total = result.Total;
+        }
+        else _rows = await Get<OfferingRow[]>($"offerings?view={View}&mine={_mine.ToString().ToLowerInvariant()}&{_appliedQuery}");
+    }
+    private Task Reload() => Run(async () => { _appliedQuery = Query(); _page = new(1, _page.Size); await Load(); });
+    private Task Refresh() => Run(Load);
+    private Task GoPage(LmsTablePage next) => Run(async () =>
+    {
+        var previous = _page; _page = next;
+        try { await Load(); } catch { _page = previous; throw; }
+    });
     private void Start(OfferingRow? row)
     {
-        _editing = row?.Id; _course = row?.CourseId; _term = row?.TermId ?? _termFilter; _lead = row?.LeadId; _major = row?.OwnerMajorId;
+        _editing = row?.Id; _course = row?.CourseId; _term = row?.TermId ?? _termFilter; _lead = row?.LeadId; _major = row?.OwnerMajorId ?? Course?.ParentId;
         _group = row?.Group ?? ""; _audience = row?.Audience ?? OfferingAudience.Specialized; _targets = (row?.CohortIds ?? []).ToHashSet();
         _active = row?.Active ?? true; _published = row?.PublishedUtc.HasValue == true; _edit = true;
     }

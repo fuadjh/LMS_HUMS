@@ -58,8 +58,9 @@ internal sealed class LmsCatalog(LmsData data, LmsAccess access, StudioFlags fla
                 return (await data.Read<Cohort>().OrderByDescending(x => x.Year).ThenBy(x => x.Season).ToArrayAsync(ct))
                     .Where(x => allowed.ContainsKey(x.Id)).Select(x => new CatalogRow(x.Id, allowed[x.Id].Label, ParentId: x.ProgramId, Year: x.Year, Season: x.Season, Active: x.Active)).ToArray();
             case "courses":
-                return (await data.Read<CatalogCourse>().OrderBy(x => x.Title).ToArrayAsync(ct)).Where(x => access.AdminIn(p, x.FacultyId, null, true))
-                    .Select(x => new CatalogRow(x.Id, x.Title, x.Code, x.FacultyId, Active: x.Active)).ToArray();
+                return (await data.Read<CatalogCourse>().OrderBy(x => x.Title).ThenBy(x => x.Code).ThenBy(x => x.Id).ToArrayAsync(ct))
+                    .Where(x => access.AdminIn(p, x.FacultyId, x.MajorId))
+                    .Select(x => new CatalogRow(x.Id, x.Title, x.Code, x.MajorId, x.FacultyId, Active: x.Active)).ToArray();
             default: throw LmsError.Missing();
         }
     }
@@ -89,8 +90,9 @@ internal sealed class LmsCatalog(LmsData data, LmsAccess access, StudioFlags fla
                 access.DemandScope(permission, m.FacultyId, input.Id);
                 if (m.FacultyId != f.Id || input.Active && !f.Active) throw LmsError.Conflict("تغییر دانشکده یا فعال‌سازی در دانشکده بایگانی‌شده مجاز نیست.");
                 if (!input.Active && (await data.Read<AcademicProgram>().AnyAsync(x => x.MajorId == m.Id && x.Active, ct) ||
-                    await data.Read<InstructorProfile>().AnyAsync(x => x.MajorId == m.Id && x.Active, ct)))
-                    throw LmsError.Conflict("رشته برنامه یا استاد فعال دارد.");
+                    await data.Read<InstructorProfile>().AnyAsync(x => x.MajorId == m.Id && x.Active, ct) ||
+                    await data.Read<CatalogCourse>().AnyAsync(x => x.MajorId == m.Id && x.Active, ct)))
+                    throw LmsError.Conflict("رشته برنامه، استاد یا درس فعال دارد.");
                 m.Code = LmsError.Code(input.Code); m.Title = LmsError.Text(input.Title, 180); m.Active = input.Active;
                 id = m.Id; if (input.Id is null) data.Db.Add(m); break;
             }
@@ -131,14 +133,18 @@ internal sealed class LmsCatalog(LmsData data, LmsAccess access, StudioFlags fla
             }
             case "courses":
             {
-                var f = await data.Find<Faculty>(LmsError.Id(input.ParentId), ct);
-                access.DemandScope(permission, f.Id, null);
-                var c = input.Id is { } value ? await data.Find<CatalogCourse>(value, ct) : new CatalogCourse() { FacultyId = f.Id };
-                if (c.FacultyId != f.Id || input.Active && !f.Active) throw LmsError.Conflict("دانشکدهٔ درس تغییر نمی‌کند.");
+                var major = await CourseMajor(LmsError.Id(input.ParentId), permission, input.Active, ct);
+                var c = input.Id is { } value ? await data.Find<CatalogCourse>(value, ct) : new CatalogCourse { FacultyId = major.FacultyId };
+                if (input.Id.HasValue) access.DemandScope(permission, c.FacultyId, c.MajorId);
+                if (c.FacultyId != major.FacultyId || c.MajorId != null && c.MajorId != major.Id)
+                    throw LmsError.Conflict("رشتهٔ درس موجود تغییر نمی‌کند؛ برای درس قدیمی فقط رشته‌ای از دانشکدهٔ اصلی انتخاب کنید.");
                 if (!input.Active && await (from o in data.Read<Offering>() join t in data.Read<Term>() on o.TermId equals t.Id
                           where o.CourseId == c.Id && o.Active && t.Active && t.ClosedUtc == null && t.EndsUtc > now select o.Id).AnyAsync(ct))
                     throw LmsError.Conflict("درس در نیم‌سال جاری ارائهٔ فعال دارد.");
-                c.Code = LmsError.Code(input.Code); c.Title = LmsError.Text(input.Title, 180); c.Active = input.Active;
+                var code = LmsError.Code(input.Code);
+                if (await data.Read<CatalogCourse>().AnyAsync(x => x.Id != c.Id && x.MajorId == major.Id && x.Code == code, ct))
+                    throw LmsError.Conflict("کد درس در همین رشته تکراری است.");
+                c.MajorId = major.Id; c.Code = code; c.Title = LmsError.Text(input.Title, 180); c.Active = input.Active;
                 id = c.Id; if (input.Id is null) data.Db.Add(c); break;
             }
             case "terms":
@@ -168,6 +174,15 @@ internal sealed class LmsCatalog(LmsData data, LmsAccess access, StudioFlags fla
             default: throw LmsError.Missing();
         }
         return await data.Finish(tx, id, id, ct);
+    }
+
+    internal async Task<Major> CourseMajor(Guid id, string permission, bool active, CancellationToken ct)
+    {
+        var m = await data.Read<Major>().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw LmsError.Missing();
+        access.DemandScope(permission, m.FacultyId, m.Id);
+        if (active && (!m.Active || !await data.Read<Faculty>().AnyAsync(x => x.Id == m.FacultyId && x.Active, ct)))
+            throw LmsError.Conflict("رشته یا دانشکده غیرفعال است.");
+        return m;
     }
 
     public async Task<ScopeGrantRow[]> GrantsAsync(CancellationToken ct)

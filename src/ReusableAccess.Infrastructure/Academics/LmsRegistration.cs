@@ -18,8 +18,14 @@ public static class LmsRegistration
     {
         services.AddScoped<LmsData>();
         services.AddScoped<LmsAccess>();
-        services.AddScoped<ILmsCatalog, LmsCatalog>();
-        services.AddScoped<ILmsPeople, LmsPeople>();
+        services.AddScoped<LmsCatalog>();
+        services.AddScoped<ILmsCatalog>(p => p.GetRequiredService<LmsCatalog>());
+        services.AddScoped<LmsPeople>();
+        services.AddScoped<ILmsPeople>(p => p.GetRequiredService<LmsPeople>());
+        services.AddScoped<ILmsAdminTableQueries, AcademicAdminTables>();
+        services.AddScoped<AcademicWorkbook>();
+        services.AddScoped<IAcademicWorkbookQueries>(p => p.GetRequiredService<AcademicWorkbook>());
+        services.AddScoped<IAcademicWorkbookCommands>(p => p.GetRequiredService<AcademicWorkbook>());
         services.AddSingleton<StudioFlags>();
         services.AddScoped<StudioTemplates>();
         services.AddScoped<StudioMaterializer>();
@@ -42,6 +48,11 @@ public static class LmsRegistration
         services.AddScoped<LmsCalendar>();
         services.AddScoped<ILmsCalendar>(p => p.GetRequiredService<LmsCalendar>());
         services.AddScoped<ILmsOperations, LmsOperations>();
+        services.AddScoped<LearningReadModel>();
+        services.AddScoped<LearningAccess>();
+        services.AddScoped<LearningValidation>();
+        services.AddScoped<ILearningQueries, LearningQueries>();
+        services.AddScoped<ILearningCommands, LearningCommands>();
         services.AddScoped<LmsFiles>();
         services.AddScoped<ILmsFileTransport>(p => p.GetRequiredService<LmsFiles>());
         services.AddScoped<LmsSms>();

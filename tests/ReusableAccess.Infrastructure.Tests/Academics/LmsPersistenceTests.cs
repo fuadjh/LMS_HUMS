@@ -24,6 +24,7 @@ public sealed partial class LmsPersistenceTests
     private const string AddLms = "20261121203400_AddUniversityLms";
     private const string AddStudio = "20261125090000_AddLmsStudio";
     private const string AddWorkspace = "20261126093000_SeparateOfferingWorkspace";
+    private const string AddLearning = "20261126183000_LearningCurriculumAndMajorCourses";
     private static string? Sql => Environment.GetEnvironmentVariable("RA_SQLSERVER_TEST_CONNECTION") ??
         Environment.GetEnvironmentVariable("REUSABLEACCESS_TEST_SQLSERVER");
 
@@ -37,6 +38,7 @@ public sealed partial class LmsPersistenceTests
         Assert.Contains(AddLms, db.Database.GetMigrations());
         Assert.Contains(AddStudio, db.Database.GetMigrations());
         Assert.Contains(AddWorkspace, db.Database.GetMigrations());
+        Assert.Contains(AddLearning, db.Database.GetMigrations());
         Assert.False(db.Database.HasPendingModelChanges());
         foreach (var type in db.Model.GetEntityTypes().Where(t => t.GetSchema() == "lms"))
         foreach (var fk in type.GetForeignKeys()) Assert.Equal(DeleteBehavior.NoAction, fk.DeleteBehavior);
@@ -50,6 +52,7 @@ public sealed partial class LmsPersistenceTests
         await db.Database.MigrateAsync();
         Assert.Contains(AddLms, await db.Database.GetAppliedMigrationsAsync());
         Assert.Contains(AddWorkspace, await db.Database.GetAppliedMigrationsAsync());
+        Assert.Contains(AddLearning, await db.Database.GetAppliedMigrationsAsync());
         Assert.False(await db.Set<Enrollment>().AnyAsync());
     });
 
@@ -61,6 +64,28 @@ public sealed partial class LmsPersistenceTests
         await db.Database.MigrateAsync();
         Assert.Equal(marker.Id, (await db.Users.SingleAsync(x => x.Id == marker.Id)).Id);
         Assert.False(await db.Set<StudentProfile>().AnyAsync());
+    });
+
+    [AcademicSqlFact]
+    public Task LegacyFacultyCourseIsNotAssignedToAnArbitraryMajor() => WithDatabase(async db =>
+    {
+        await db.GetService<IMigrator>().MigrateAsync(AddWorkspace);
+        var faculty = Guid.NewGuid(); var m1 = Guid.NewGuid(); var m2 = Guid.NewGuid(); var lesson = Guid.NewGuid();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO lms.Faculty(Id, Code, Title, Active) VALUES ({faculty}, N'FAC', N'دانشکده', 1);
+            INSERT INTO lms.Major(Id, FacultyId, Code, Title, Active) VALUES
+                ({m1}, {faculty}, N'A', N'رشته یک', 1), ({m2}, {faculty}, N'B', N'رشته دو', 1);
+            INSERT INTO lms.CatalogCourse(Id, FacultyId, Code, Title, Active) VALUES ({lesson}, {faculty}, N'01', N'درس تاریخی', 1);
+            """);
+        await db.Database.MigrateAsync();
+        var old = await db.Set<CatalogCourse>().SingleAsync(x => x.Id == lesson);
+        Assert.Null(old.MajorId);
+        Assert.Equal("درس تاریخی", old.Title);
+        Assert.Equal(faculty, old.FacultyId);
+        db.AddRange(new CatalogCourse { FacultyId = faculty, MajorId = m1, Code = "01", Title = "درس ۱", Active = true },
+            new CatalogCourse { FacultyId = faculty, MajorId = m2, Code = "01", Title = "درس ۲", Active = true });
+        await db.SaveChangesAsync();
+        Assert.Equal(3, await db.Set<CatalogCourse>().CountAsync(x => x.Code == "01"));
     });
 
     [AcademicSqlFact]

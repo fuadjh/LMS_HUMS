@@ -69,32 +69,47 @@ internal sealed class LmsPeople(LmsData data, LmsAccess access, UserManager<Appl
     }
 
     public async Task<PeopleRow[]> ListAsync(string kind, Guid? scopeId, string? search, CancellationToken ct)
+        => (await Page(kind, scopeId, search, null, ct)).Rows;
+
+    internal async Task<LmsTableSlice<PeopleRow>> Page(string kind, Guid? scopeId, string? search, LmsTablePage? page, CancellationToken ct)
     {
         var actor = await access.Load(ct);
-        await access.AsEducation(LmsPermissions.PeopleRead, ct);
+        const string permission = LmsPermissions.PeopleRead;
+        await access.AsEducation(permission, ct);
         var student = IsStudent(kind);
         var q = LmsError.Text(search, 80, optional: true);
-        if (scopeId is { } s) await Scope(LmsPermissions.PeopleRead, student, s, false, ct);
+        if (scopeId is { } s) await Scope(permission, student, s, false, ct);
+        var scope = access.EducationScopes(permission);
+        var faculties = scope.Faculties; var majors = scope.Majors; var platform = actor.IsPlatformSuperAdmin;
+        IQueryable<PeopleRow> rows;
         if (!student)
         {
-            var rows = await (from p in data.Read<InstructorProfile>() join m in data.Read<Major>() on p.MajorId equals m.Id
-                              join u in data.Read<ApplicationUser>() on p.Id equals u.Id
-                              where (actor.IsPlatformSuperAdmin || !u.IsPlatformSuperAdmin) && (scopeId == null || p.MajorId == scopeId) &&
-                                    (q == "" || u.DisplayName.Contains(q) || p.Classification.Contains(q))
-                              orderby u.DisplayName select new { p, u.DisplayName, u.IsActive, m.FacultyId, m.Title }).ToArrayAsync(ct);
-            return rows.Where(x => access.AdminIn(LmsPermissions.PeopleRead, x.FacultyId, x.p.MajorId)).Take(500)
-                .Select(x => new PeopleRow(x.p.Id, x.DisplayName, x.IsActive, x.p.Active, x.p.MajorId, null, x.Title, null, x.p.Classification, x.p.CvUrl)).ToArray();
+            rows = from p in data.Read<InstructorProfile>() join m in data.Read<Major>() on p.MajorId equals m.Id
+                   join u in data.Read<ApplicationUser>() on p.Id equals u.Id
+                   where (platform || !u.IsPlatformSuperAdmin && (faculties.Contains(m.FacultyId) || majors.Contains(m.Id))) &&
+                         (scopeId == null || p.MajorId == scopeId) && (q == "" || u.DisplayName.Contains(q) || p.Classification.Contains(q))
+                   orderby u.DisplayName, p.Id
+                   select new PeopleRow(p.Id, u.DisplayName, u.IsActive, p.Active, p.MajorId, null, m.Title, null, p.Classification, p.CvUrl);
         }
-        var roster = await (from r in data.Read<StudyRecord>()
-                            join p in data.Read<StudentProfile>() on r.StudentId equals p.Id
-                            join c in access.Cohorts() on r.CohortId equals c.Id
-                            join u in data.Read<ApplicationUser>() on r.StudentId equals u.Id
-                            where (actor.IsPlatformSuperAdmin || !u.IsPlatformSuperAdmin) && (scopeId == null || r.CohortId == scopeId) &&
-                                  (q == "" || u.DisplayName.Contains(q) || r.Number.Contains(q)) &&
-                                  !data.Read<StudyRecord>().Any(old => old.StudentId == r.StudentId && old.OpenedUtc > r.OpenedUtc)
-                            orderby u.DisplayName select new { r, p, c, u.DisplayName, u.IsActive }).ToArrayAsync(ct);
-        return roster.Where(x => access.AdminIn(LmsPermissions.PeopleRead, x.c.FacultyId, x.c.MajorId)).Take(500)
-            .Select(x => new PeopleRow(x.p.Id, x.DisplayName, x.IsActive, x.p.Active, x.c.MajorId, x.c.Id, x.c.Label, x.r.Number, null, null)).ToArray();
+        else
+        {
+            rows = from r in data.Read<StudyRecord>() join p in data.Read<StudentProfile>() on r.StudentId equals p.Id
+                   join c in access.Cohorts() on r.CohortId equals c.Id join u in data.Read<ApplicationUser>() on r.StudentId equals u.Id
+                   where (platform || !u.IsPlatformSuperAdmin && (faculties.Contains(c.FacultyId) || majors.Contains(c.MajorId))) &&
+                         (scopeId == null || r.CohortId == scopeId) && (q == "" || u.DisplayName.Contains(q) || r.Number.Contains(q)) &&
+                         r.Id == data.Read<StudyRecord>().Where(old => old.StudentId == r.StudentId)
+                              .OrderByDescending(old => old.EndedUtc == null).ThenByDescending(old => old.OpenedUtc).ThenByDescending(old => old.Id)
+                              .Select(old => old.Id).FirstOrDefault()
+                   orderby u.DisplayName, p.Id
+                   select new PeopleRow(p.Id, u.DisplayName, u.IsActive, p.Active, c.MajorId, c.Id, c.Label, r.Number, null, null);
+        }
+        if (page is null)
+        {
+            var first = await rows.Take(500).ToArrayAsync(ct);
+            return new(first, first.Length, 1, 500);
+        }
+        var (actual, size, total) = await AcademicPaging.Bounds(rows, page, ct);
+        return new(await rows.Skip((actual - 1) * size).Take(size).ToArrayAsync(ct), total, actual, size);
     }
 
     public async Task<StudyRow[]> HistoryAsync(Guid studentId, CancellationToken ct)
